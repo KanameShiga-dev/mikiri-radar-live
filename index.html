@@ -41,7 +41,9 @@ video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;backgrou
 
 /* top */
 .top{position:absolute;left:0;right:0;top:0;padding:calc(var(--st) + 10px) 14px 10px;display:flex;justify-content:space-between;align-items:center;gap:10px;background:linear-gradient(to bottom,rgba(0,0,0,.6),rgba(0,0,0,0));pointer-events:none}
-.brand{font-family:var(--display);font-size:17px;letter-spacing:.03em}
+.brand{font-family:var(--display);font-size:17px;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.topr{flex:0 0 auto}
+.stat{white-space:nowrap}
 .brand b{color:var(--disc);font-weight:400}
 .topr{display:flex;gap:6px;align-items:center}
 .stat{pointer-events:auto;font-size:12px;font-weight:700;background:var(--panel);border:1px solid var(--line);padding:5px 10px;border-radius:99px;font-variant-numeric:tabular-nums;display:flex;gap:6px;align-items:center}
@@ -130,6 +132,15 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .pre{white-space:pre-line;font-size:13px;color:var(--muted)}
 .lic{font-size:13px;display:flex;flex-direction:column;gap:10px}
 .lic a{color:var(--exp)}
+.ctx{width:100%;max-height:34dvh;object-fit:contain;border-radius:10px;background:#000}
+.cap{font-size:12px;color:var(--muted);margin-top:-6px}
+.loc{font-size:13px;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}
+.loc a{color:var(--exp);font-weight:700}
+.ignrow{display:flex;align-items:center;gap:8px;font-size:12.5px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:4px 4px 4px 10px;align-self:flex-start}
+.ignrow button{color:var(--exp);font-weight:700;min-height:36px;padding:0 8px}
+.ignlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;max-height:40dvh;overflow:auto}
+.ignlist li{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:6px 6px 6px 10px}
+.ignlist li span.t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (prefers-reduced-motion: reduce){#banner .b{animation:none}.stat.run .led{animation:none}.box{transition:none}}
 </style>
 </head>
@@ -154,6 +165,9 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       <button class="icon" id="addBtn" aria-label="手入力で記録">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
       </button>
+      <button class="icon" id="geoBtn" aria-pressed="false" aria-label="位置情報を記録">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+      </button>
       <button class="icon" id="soundBtn" aria-pressed="true" aria-label="通知音">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path id="soundWave" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>
       </button>
@@ -161,6 +175,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
         <svg viewBox="0 0 24 24" fill="currentColor"><path id="pauseIcon" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
       </button>
     </div>
+    <div class="ignrow" id="ignRow" hidden><span id="ignText"></span><button id="ignOpen">確認・解除</button></div>
     <div class="log" id="log"></div>
   </div>
 
@@ -188,13 +203,18 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   <form method="dialog" class="dlg">
     <h2 id="edTitle">記録の内容</h2>
     <div class="ed-head"><img id="edImg" alt=""><div><div id="edKind" class="k"></div><div id="edMain" class="ed-main"></div></div></div>
+    <img id="edCtx" class="ctx" alt="記録したときの画面。見つけた位置を枠で示しています">
+    <p class="cap" id="edCtxCap">記録したときの画面（枠が見つけた位置）</p>
     <p id="edRead" class="pre"></p>
+    <div class="loc" id="edLoc"></div>
     <label class="f" id="edDateRow">賞味期限の日付（読み違いはここで直せます）<input type="date" id="edDate"></label>
     <div class="dlg-actions">
-      <button type="button" class="btn danger" id="edDel">誤検出として消す</button>
+      <button type="button" class="btn" id="edRemove">記録だけ消す</button>
+      <button type="button" class="btn danger" id="edIgnore">誤検出として無視</button>
       <button type="button" class="btn primary" id="edSave">日付を保存</button>
       <button value="close" class="btn">閉じる</button>
     </div>
+    <p class="fine" id="edHint">「記録だけ消す」は一覧から消すだけです。「誤検出として無視」は、同じ文字列をページを開き直すまで検出しません（一覧の上から解除できます）。</p>
   </form>
 </dialog>
 
@@ -217,6 +237,30 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   </form>
 </dialog>
 
+<dialog id="ignDlg" aria-labelledby="ignTitle">
+  <form method="dialog" class="dlg">
+    <h2 id="ignTitle">無視している表示</h2>
+    <p class="fine">「誤検出として無視」にした文字列です。解除すると、また検出・通知します。ページを開き直すと自動で解除されます。</p>
+    <ul class="ignlist" id="ignList"></ul>
+    <div class="dlg-actions">
+      <button type="button" class="btn danger" id="ignClear">すべて解除</button>
+      <button value="close" class="btn">閉じる</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="geoDlg" aria-labelledby="geoTitle">
+  <form method="dialog" class="dlg">
+    <h2 id="geoTitle">位置情報を記録しますか？</h2>
+    <p>有効にすると、見つけた表示の記録に端末の位置情報（おおよその緯度・経度）を付けます。あとで「どの店で見つけたか」「今いる場所からどのくらい離れているか」を確認できます。</p>
+    <p class="fine">屋内では数十mずれることがあり、棚の位置までは分かりません。売場のどこにあったかは、記録の「記録したときの画面」で確認してください。位置情報はこの端末のブラウザにだけ保存し、外部へは送信しません（「地図で開く」を押したときだけ地図アプリに座標を渡します）。あとから同じボタンでいつでも止められます。</p>
+    <div class="dlg-actions">
+      <button value="cancel" class="btn">記録しない</button>
+      <button value="ok" class="btn primary">記録する</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="licDlg" aria-labelledby="licTitle">
   <form method="dialog" class="dlg">
     <h2 id="licTitle">ライセンス・出典</h2>
@@ -224,7 +268,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       <p>文字認識モデル: PaddleOCR PP-OCRv6 small（検出・認識モデルと文字辞書）。Apache License 2.0 で提供されています。<a href="models/LICENSE-PaddleOCR-models.txt" target="_blank" rel="noopener">ライセンス全文</a> / <a href="https://github.com/PaddlePaddle/PaddleOCR" target="_blank" rel="noopener">PaddleOCR</a></p>
       <p>推論エンジン: ONNX Runtime Web（MIT License）。jsDelivr から読み込みます。<a href="https://github.com/microsoft/onnxruntime" target="_blank" rel="noopener">onnxruntime</a></p>
       <p>フォント: Dela Gothic One、Zen Kaku Gothic New（SIL Open Font License）。Google Fonts から読み込みます。</p>
-      <p class="fine">カメラの映像と読み取った文字は端末の中だけで処理し、外部へは送信しません。記録した一覧（縮小画像を含む）はこの端末のブラウザに保存されます。</p>
+      <p class="fine">カメラの映像と読み取った文字は端末の中だけで処理し、外部へは送信しません。記録した一覧（縮小画像と記録したときの画面、位置情報を有効にした場合はおおよその位置を含む）はこの端末のブラウザに保存されます。</p>
     </div>
     <div class="dlg-actions"><button value="close" class="btn">閉じる</button></div>
   </form>
@@ -250,9 +294,9 @@ const LOG_MAX = 30;
 const LOG_DEDUP_MS = 60000; // 同じ「種類＋判定結果」はこの間は一覧に重ねて記録しない
 
 const CATS = {
-  discount:  {name:"割引",         c:"var(--disc)", ci:"var(--disc-ink)", tone:[880,1175]},
-  expiry:    {name:"賞味期限",     c:"var(--exp)",  ci:"var(--exp-ink)",  tone:[660,660,990]},
-  challenge: {name:"安さへの挑戦", c:"var(--chal)", ci:"var(--chal-ink)", tone:[988,1319]},
+  discount:  {name:"割引",         c:"var(--disc)", ci:"var(--disc-ink)", hex:"#F0493C", tone:[880,1175]},
+  expiry:    {name:"賞味期限",     c:"var(--exp)",  ci:"var(--exp-ink)",  hex:"#F5C21C", tone:[660,660,990]},
+  challenge: {name:"安さへの挑戦", c:"var(--chal)", ci:"var(--chal-ink)", hex:"#2A9CC0", tone:[988,1319]},
 };
 
 /* ================= OCR コア（PaddleOCR PP-OCRv6: DB検出 + CTC認識） ================= */
@@ -405,13 +449,14 @@ const meaningKey=d=>d.type+"|"+(d.type==="discount"?label(d):d.type==="expiry"?(
 /* ================= 状態 ================= */
 const $=id=>document.getElementById(id);
 const video=$("video"), overlay=$("overlay");
-const state={enabled:new Set(Object.keys(CATS)), sound:true, paused:false, running:false};
-try{ const p=JSON.parse(localStorage.getItem("mikiri.live")||"null"); if(p){ if(Array.isArray(p.enabled)&&p.enabled.length) state.enabled=new Set(p.enabled.filter(k=>CATS[k])); if(typeof p.sound==="boolean") state.sound=p.sound; } }catch(e){}
-const save=()=>{ try{ localStorage.setItem("mikiri.live",JSON.stringify({enabled:[...state.enabled],sound:state.sound})); }catch(e){} };
+const state={enabled:new Set(Object.keys(CATS)), sound:true, geo:false, paused:false, running:false};
+try{ const p=JSON.parse(localStorage.getItem("mikiri.live")||"null"); if(p){ if(Array.isArray(p.enabled)&&p.enabled.length) state.enabled=new Set(p.enabled.filter(k=>CATS[k])); if(typeof p.sound==="boolean") state.sound=p.sound; if(typeof p.geo==="boolean") state.geo=p.geo; } }catch(e){}
+const save=()=>{ try{ localStorage.setItem("mikiri.live",JSON.stringify({enabled:[...state.enabled],sound:state.sound,geo:state.geo})); }catch(e){} };
 let det=null, rec=null, dict=null, backend="";
 let tracks=[], nextId=1, recentAlerts=[], logKeys=new Map();
 let logItems=[];            // 記録一覧（新しい順）。localStorage に保存
-const ignored=new Set();    // 誤検出として消した「種類|文字列」。ページを開き直すまで通知しない
+const ignored=new Map();    // 誤検出として無視した「種類|文字列」→{type,text,at}。ページを開き直すまで検出しない
+const geo={watch:null,last:null}; // 位置情報（有効時のみ）
 const ignKey=(type,text)=>type+"|"+text;
 let stream=null, wakeLock=null;
 let frameScale=1; // rec画像座標 → video座標
@@ -430,6 +475,7 @@ function renderChips(){
     box.append(b);
   }
   $("soundBtn").setAttribute("aria-pressed",state.sound); $("soundWave").style.display=state.sound?"":"none";
+  $("geoBtn").setAttribute("aria-pressed",state.geo); $("geoBtn").setAttribute("aria-label",state.geo?"位置情報の記録をやめる":"位置情報を記録");
 }
 $("soundBtn").onclick=()=>{ state.sound=!state.sound; save(); renderChips(); if(state.sound) beep([880]); };
 $("pauseBtn").onclick=()=>{ state.paused=!state.paused; $("pauseBtn").setAttribute("aria-pressed",state.paused);
@@ -477,6 +523,37 @@ function thumbFrom(box){
     const s=Math.min(1,140/Math.max(w,h)), c=document.createElement("canvas"); c.width=Math.max(1,w*s|0); c.height=Math.max(1,h*s|0);
     c.getContext("2d").drawImage(recCanvas,x,y,w,h,0,0,c.width,c.height); return c.toDataURL("image/jpeg",.8); }catch(e){ return ""; }
 }
+// 記録したときの画面全体（縮小）に、見つけた位置の枠を描き込む
+function contextFrom(box,hex){
+  try{ const W=recCanvas.width,H=recCanvas.height; if(!W||!H) return "";
+    const s=Math.min(1,360/Math.max(W,H)), c=document.createElement("canvas"); c.width=Math.max(1,W*s|0); c.height=Math.max(1,H*s|0);
+    const g=c.getContext("2d"); g.drawImage(recCanvas,0,0,c.width,c.height);
+    const pad=4, x=box.x*s-pad, y=box.y*s-pad, w=box.w*s+2*pad, h=box.h*s+2*pad;
+    g.lineWidth=5; g.strokeStyle="rgba(0,0,0,.7)"; g.strokeRect(x,y,w,h);
+    g.lineWidth=3; g.strokeStyle=hex; g.strokeRect(x,y,w,h);
+    return c.toDataURL("image/jpeg",.65); }catch(e){ return ""; }
+}
+
+/* ================= 位置情報（任意） ================= */
+function geoStart(){
+  if(!state.geo||!navigator.geolocation||geo.watch!=null) return;
+  geo.watch=navigator.geolocation.watchPosition(
+    p=>{ geo.last={lat:+p.coords.latitude.toFixed(5),lng:+p.coords.longitude.toFixed(5),acc:Math.round(p.coords.accuracy),at:Date.now()}; },
+    e=>{ if(e.code===1){ state.geo=false; save(); geoStop(); renderChips(); toast("位置情報が許可されなかったため、記録しません"); } },
+    {enableHighAccuracy:false,maximumAge:60000,timeout:30000});
+}
+function geoStop(){ if(geo.watch!=null&&navigator.geolocation) navigator.geolocation.clearWatch(geo.watch); geo.watch=null; }
+// 5分以内に取れた位置だけを記録に付ける
+const currentLoc=()=> state.geo&&geo.last&&Date.now()-geo.last.at<300000 ? {lat:geo.last.lat,lng:geo.last.lng,acc:geo.last.acc} : null;
+function distM(a,b){ const R=6371000,r=Math.PI/180, dLa=(b.lat-a.lat)*r, dLo=(b.lng-a.lng)*r;
+  const h=Math.sin(dLa/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLo/2)**2; return 2*R*Math.asin(Math.sqrt(h)); }
+$("geoBtn").onclick=()=>{
+  if(state.geo){ state.geo=false; save(); geoStop(); geo.last=null; renderChips(); toast("位置情報の記録をやめました"); return; }
+  if(!navigator.geolocation){ toast("このブラウザでは位置情報を使えません"); return; }
+  $("geoDlg").showModal();
+};
+$("geoDlg").addEventListener("close",()=>{ if($("geoDlg").returnValue!=="ok") return;
+  state.geo=true; save(); renderChips(); geoStart(); toast("位置情報の記録を始めました。同じボタンで止められます"); });
 
 /* ================= 記録一覧 ================= */
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -484,8 +561,9 @@ function loadLog(){ try{ const a=JSON.parse(localStorage.getItem("mikiri.log")||
   // 再読み込み直後に同じ表示を重ねて記録しないよう、復元した記録から重複判定を作り直す
   for(const it of logItems){ if(it.source!=="camera") continue; const k=meaningKey(it); if(!(logKeys.get(k)>it.at)) logKeys.set(k,it.at); } }
 function saveLog(){
-  try{ localStorage.setItem("mikiri.log",JSON.stringify(logItems)); }
-  catch(e){ try{ localStorage.setItem("mikiri.log",JSON.stringify(logItems.map(x=>({...x,thumb:""})))); }catch(e2){} } // 容量不足なら画像なしで保存
+  // 容量不足なら、古い記録の画面画像 → すべての画面画像 → 縮小画像の順に落として保存
+  const tries=[x=>x, (x,i)=>i<10?x:{...x,ctx:""}, x=>({...x,ctx:""}), x=>({...x,ctx:"",thumb:""})];
+  for(const f of tries){ try{ localStorage.setItem("mikiri.log",JSON.stringify(logItems.map(f))); return; }catch(e){} }
 }
 function when(at){ const d=new Date(at), hm=d.toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"});
   return d.toDateString()===new Date().toDateString()?hm:`${d.getMonth()+1}/${d.getDate()} ${hm}`; }
@@ -519,7 +597,7 @@ function pushLog(it){ logItems.unshift(it); if(logItems.length>LOG_MAX) logItems
 function addLog(d){
   const key=meaningKey(d);
   const now=Date.now(); if(logKeys.has(key) && now-logKeys.get(key)<LOG_DEDUP_MS) return; logKeys.set(key,now);
-  pushLog({id:uid(),type:d.type,info:structuredClone(d.info),text:d.text,conf:d.conf,thumb:thumbFrom(d.box),at:now,source:"camera"});
+  pushLog({id:uid(),type:d.type,info:structuredClone(d.info),text:d.text,conf:d.conf,thumb:thumbFrom(d.box),ctx:contextFrom(d.box,CATS[d.type].hex),loc:currentLoc(),at:now,source:"camera"});
 }
 
 /* 訂正・削除 */
@@ -534,26 +612,58 @@ let editing=null;
 function openEdit(id){
   const it=logItems.find(x=>x.id===id); if(!it) return; editing=it; const c=CATS[it.type];
   $("edImg").hidden=!it.thumb; $("edImg").src=it.thumb||"";
+  $("edCtx").hidden=$("edCtxCap").hidden=!it.ctx; $("edCtx").src=it.ctx||"";
+  const loc=$("edLoc"); loc.replaceChildren();
+  if(it.loc){
+    const s=document.createElement("span"), here=currentLoc();
+    const dm=here?Math.round(distM(here,it.loc)):null;
+    s.textContent = dm==null ? `記録地点あり（精度 ±${it.loc.acc}m）`
+      : dm<=Math.max(it.loc.acc,here.acc) ? `記録地点: 現在地とほぼ同じ場所（精度 ±${it.loc.acc}m）`
+      : `記録地点: 現在地から約${dm}m（精度 ±${it.loc.acc}m）`;
+    const a=document.createElement("a"); a.href=`https://maps.apple.com/?ll=${it.loc.lat},${it.loc.lng}&q=${encodeURIComponent("記録地点")}`; a.target="_blank"; a.rel="noopener"; a.textContent="地図で開く";
+    loc.append(s,a);
+  }
+  loc.hidden=!it.loc;
+  const cam=it.source!=="manual"; $("edIgnore").hidden=!cam; $("edHint").hidden=!cam;
+  $("edRemove").textContent = cam ? "記録だけ消す" : "この記録を消す";
   const k=$("edKind"); k.style.setProperty("--c",c.c); k.style.setProperty("--ci",c.ci); k.replaceChildren(...kindEls(it));
   $("edMain").textContent=headOf(it);
   $("edRead").textContent = it.source==="manual" ? `手入力した内容: ${it.text||"（なし）"}\n記録 ${when(it.at)}`
     : `読み取った文字: ${it.text}\n読取スコア ${Math.round((it.conf||0)*100)}%（${unsure(it)?"低め。読み違いの可能性があります":"文字認識モデルが出した確からしさの目安"}）\n記録 ${when(it.at)}`;
   const isExp=it.type==="expiry"; $("edDateRow").hidden=!isExp; $("edSave").hidden=!isExp;
   $("edDate").value = isExp&&it.info.date ? iso(resolveDate(it.info.date)) : "";
-  $("edDel").textContent = it.source==="manual" ? "この記録を消す" : "誤検出として消す";
   $("editDlg").showModal();
 }
 $("edSave").onclick=()=>{ if(!editing) return; editing.info={...editing.info,date:fromIso($("edDate").value),fixed:true};
   renderLog(); saveLog(); $("editDlg").close(); toast("日付を直しました"); };
-$("edDel").onclick=()=>{
+// ignore=true なら「誤検出として無視」（同じ文字列を検出しない）、false なら記録を消すだけ
+function removeEditing(ignore){
   const it=editing; if(!it) return; const idx=logItems.indexOf(it); if(idx<0) return;
   logItems.splice(idx,1); let k=null;
-  if(it.source!=="manual"){ k=ignKey(it.type,it.text); ignored.add(k); tracks=tracks.filter(t=>ignKey(t.type,t.text)!==k); }
-  renderLog(); saveLog(); drawOverlay(); $("editDlg").close();
-  toast(k?"消しました。同じ文字列は、ページを開き直すまで通知しません":"記録を消しました", ()=>{
-    logItems.splice(Math.min(idx,logItems.length),0,it); if(k) ignored.delete(k); renderLog(); saveLog(); });
-};
+  if(ignore){ k=ignKey(it.type,it.text); ignored.set(k,{type:it.type,text:it.text,at:Date.now()}); tracks=tracks.filter(t=>ignKey(t.type,t.text)!==k); }
+  renderLog(); saveLog(); renderIgn(); drawOverlay(); $("editDlg").close();
+  toast(k?`「${it.text}」を無視します。一覧の上の「確認・解除」で戻せます`:"記録を消しました", ()=>{
+    logItems.splice(Math.min(idx,logItems.length),0,it); if(k) ignored.delete(k); renderLog(); saveLog(); renderIgn(); });
+}
+$("edRemove").onclick=()=>removeEditing(false);
+$("edIgnore").onclick=()=>removeEditing(true);
 $("editDlg").addEventListener("close",()=>{ editing=null; });
+
+/* 無視している表示の確認・解除 */
+function renderIgn(){
+  const n=ignored.size; $("ignRow").hidden=!n; $("ignText").textContent=`誤検出として無視中: ${n}件`;
+  const ul=$("ignList"); ul.replaceChildren();
+  for(const [k,v] of ignored){
+    const li=document.createElement("li"), c=CATS[v.type];
+    const kc=document.createElement("span"); kc.className="kchip"; kc.style.setProperty("--c",c.c); kc.style.setProperty("--ci",c.ci); kc.textContent=c.name;
+    const t=document.createElement("span"); t.className="t"; t.textContent=v.text;
+    const b=document.createElement("button"); b.type="button"; b.className="btn"; b.textContent="解除";
+    b.onclick=()=>{ ignored.delete(k); renderIgn(); if(!ignored.size) $("ignDlg").close(); toast(`「${v.text}」の無視を解除しました`); };
+    li.append(kc,t,b); ul.append(li);
+  }
+}
+$("ignOpen").onclick=()=>{ renderIgn(); $("ignDlg").showModal(); };
+$("ignClear").onclick=()=>{ const n=ignored.size; ignored.clear(); renderIgn(); $("ignDlg").close(); toast(`${n}件の無視をすべて解除しました`); };
 
 /* 手入力（文字認識を使わない経路） */
 const adType=()=>document.querySelector('input[name="adType"]:checked').value;
@@ -568,11 +678,11 @@ $("addDlg").addEventListener("close",()=>{
   if(type==="discount"){ info=discInfo(norm(raw)); if(!info.pct&&!info.yen&&raw) info.custom=raw.slice(0,12); }
   if(type==="expiry") info={date:fromIso($("adDate").value)};
   const text=[type==="expiry"?"":raw,memo].filter(Boolean).join(" ");
-  pushLog({id:uid(),type,info,text,conf:null,thumb:"",at:Date.now(),source:"manual"});
+  pushLog({id:uid(),type,info,text,conf:null,thumb:"",loc:currentLoc(),at:Date.now(),source:"manual"});
   toast("手入力で記録しました");
 });
 
-function showSheet(){ $("start").hidden=true; $("sheet").hidden=false; renderChips(); renderLog(); }
+function showSheet(){ $("start").hidden=true; $("sheet").hidden=false; renderChips(); renderLog(); renderIgn(); geoStart(); }
 $("manualBtn").onclick=()=>{ showSheet(); $("camBtn").hidden=false; setStat("手入力モード"); };
 $("camBtn").onclick=()=>{ $("camBtn").hidden=true; $("sheet").hidden=true; $("start").hidden=false; setStat("停止中"); };
 $("licBtn").onclick=()=>$("licDlg").showModal();
