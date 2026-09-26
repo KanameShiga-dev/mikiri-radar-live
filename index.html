@@ -58,6 +58,8 @@ video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;backgrou
 @keyframes pop{0%{transform:scale(.6);opacity:0}10%{transform:scale(1.05);opacity:1}16%{transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:translateY(-8px)}}
 
 /* toast */
+#diag{position:absolute;right:14px;top:calc(var(--st) + 50px);max-width:min(300px,calc(100vw - 28px));background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:11px;line-height:1.5;font-variant-numeric:tabular-nums;pointer-events:none;white-space:pre-line}
+.cand{position:absolute;border:1.5px dashed rgba(255,255,255,.85);border-radius:4px;pointer-events:none}
 #toast{position:absolute;left:12px;right:12px;top:calc(var(--st) + 130px);margin:0 auto;max-width:440px;display:flex;gap:10px;align-items:center;background:#1C2120;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13.5px;box-shadow:0 8px 30px rgba(0,0,0,.5)}
 #toast span{flex:1}
 #toast button{flex:0 0 auto;font-weight:700;color:var(--exp);min-height:40px;padding:0 8px}
@@ -153,9 +155,10 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     <div class="brand">見切りレーダー<b>.</b></div>
     <div class="topr">
       <button class="stat" id="camBtn" hidden>カメラを起動</button>
-      <div class="stat" id="stat"><span class="led"></span><span id="statText">停止中</span></div>
+      <button class="stat" id="stat" aria-pressed="false" aria-label="診断表示の切り替え"><span class="led"></span><span id="statText">停止中</span></button>
     </div>
   </div>
+  <div id="diag" hidden></div>
   <div id="banner" aria-live="polite"></div>
   <div id="toast" role="status" hidden><span id="toastText"></span><button id="toastUndo">元に戻す</button></div>
 
@@ -499,8 +502,17 @@ function drawOverlay(){
     el.firstChild.textContent= weak(t) ? "賞味期限（日付なし）" : label(t)+(unsure(t)?" ?":"");
     el.firstChild.style.left = x<0 ? (Math.min(-x, Math.max(0,w-60))+4)+"px" : "";
   }
+  if(state.diag) lastCands.forEach((c,i)=>{ // 診断表示中は、色で見つけた候補を点線で示す
+    const id="c"+i; keep.add(id); let el=document.getElementById(id);
+    if(!el){ el=document.createElement("div"); el.id=id; el.className="cand"; overlay.append(el); }
+    el.style.left=dx+c.x*sc+"px"; el.style.top=dy+c.y*sc+"px"; el.style.width=c.w*sc+"px"; el.style.height=c.h*sc+"px"; });
   for(const el of [...overlay.children]) if(!keep.has(el.id)) el.remove();
 }
+function renderDiag(){
+  $("diag").hidden=!state.diag||!diag; if($("diag").hidden) return;
+  $("diag").textContent=`映像 ${diag.res}\n全体 ${diag.full}ms ／ 色の候補 ${diag.cands}件（詳しく読んだ ${diag.used}件・${diag.roi}ms・${diag.roiHits}行）\n読んだ文字: ${diag.texts.slice(0,8).join(" | ")||"なし"}`;
+}
+$("stat").onclick=()=>{ state.diag=!state.diag; $("stat").setAttribute("aria-pressed",state.diag); renderDiag(); drawOverlay(); };
 
 let actx=null;
 function beep(freqs){
@@ -713,11 +725,83 @@ function maybeAlert(t,now){
   addLog(t);
 }
 
+/* ================= 遠くの値引きシール: 色で候補を探し、その部分だけ高解像度で読む ================= */
+// 値引きシールは鮮やかな赤・橙・黄が多い。縮小画像で色の塊を探し、元の解像度から切り出して OCR する
+let ROI_MAX = 4;          // 1回で詳しく読む候補の数（CPU時は2に下げる）
+const ROI_SIDE = 640;     // 候補を切り出したあとの長辺（小さく写っていれば拡大する）
+const ROI_UPSCALE = 4;    // 拡大の上限
+const COLOR_SIDE = 320;   // 色の塊を探す縮小画像の長辺
+const colCanvas=document.createElement("canvas"), colCtx=colCanvas.getContext("2d",{willReadFrequently:true});
+const roiCanvas=document.createElement("canvas"), roiCtx=roiCanvas.getContext("2d",{willReadFrequently:true});
+let lastCands=[], diag=null;
+
+// 戻り値は video（元の解像度）座標の矩形
+function colorCandidates(src,vw,vh){
+  const s=COLOR_SIDE/Math.max(vw,vh), W=Math.max(1,Math.round(vw*s)), H=Math.max(1,Math.round(vh*s));
+  colCanvas.width=W; colCanvas.height=H; colCtx.drawImage(src,0,0,W,H);
+  const d=colCtx.getImageData(0,0,W,H).data, n=W*H, m=new Uint8Array(n);
+  for(let i=0,p=0;i<n;i++,p+=4){
+    const r=d[p],g=d[p+1],b=d[p+2], mx=Math.max(r,g,b), c=mx-Math.min(r,g,b);
+    if(mx<100||c<60||c<mx*0.42) continue; // 暗い・くすんだ色は除外
+    let h= mx===r ? ((g-b)/c+6)%6 : mx===g ? (b-r)/c+2 : (r-g)/c+4; h*=60;
+    // 赤(1)と橙〜黄(2)は別の塊として扱う（黄色いパッケージに赤いシールが貼られていても分かれるように）
+    if(h<=18||h>=348) m[i]=1; else if(h<=65) m[i]=2; // ピンク（h≒330〜345）は除く
+  }
+  const seen=new Uint8Array(n), st=new Int32Array(n); let blobs=[];
+  for(let i=0;i<n;i++){ if(!m[i]||seen[i]) continue;
+    const k=m[i]; let sp=0,x0=1e9,y0=1e9,x1=-1,y1=-1,cnt=0; st[sp++]=i; seen[i]=1;
+    while(sp){ const p=st[--sp],px=p%W,py=(p/W)|0; cnt++;
+      if(px<x0)x0=px; if(px>x1)x1=px; if(py<y0)y0=py; if(py>y1)y1=py;
+      if(px>0&&m[p-1]===k&&!seen[p-1]){seen[p-1]=1;st[sp++]=p-1;} if(px<W-1&&m[p+1]===k&&!seen[p+1]){seen[p+1]=1;st[sp++]=p+1;}
+      if(py>0&&m[p-W]===k&&!seen[p-W]){seen[p-W]=1;st[sp++]=p-W;} if(py<H-1&&m[p+W]===k&&!seen[p+W]){seen[p+W]=1;st[sp++]=p+W;} }
+    const w=x1-x0+1,h=y1-y0+1;
+    if(cnt<12 || w*h>n*0.04 || w/h<0.25 || w/h>4 || cnt/(w*h)<0.25) continue; // 小さすぎ・大きすぎ・細長い・スカスカは除外
+    blobs.push({x:x0,y:y0,w,h,k,score:cnt});
+  }
+  // シールの中の白文字で塊が割れることがあるので、同じ色で近いものはまとめる
+  for(let merged=true;merged;){ merged=false;
+    for(let a=0;a<blobs.length&&!merged;a++) for(let b=a+1;b<blobs.length;b++){
+      const A=blobs[a],B=blobs[b], g=Math.max(2,Math.min(Math.max(A.w,A.h),Math.max(B.w,B.h))*0.3);
+      if(A.k===B.k && A.x-g<B.x+B.w && B.x-g<A.x+A.w && A.y-g<B.y+B.h && B.y-g<A.y+A.h){
+        blobs[a]={...union(A,B),k:A.k,score:A.score+B.score}; blobs.splice(b,1); merged=true; break; } } }
+  // 大きな塊は全体処理で読めるので対象外。赤（割引・半額シールに多い）を優先し、次に大きい順
+  return blobs.filter(b=>b.w*b.h<=n*0.04).sort((a,b)=>a.k-b.k||b.score-a.score).slice(0,ROI_MAX).map(b=>({x:b.x/s,y:b.y/s,w:b.w/s,h:b.h/s,k:b.k}));
+}
+// 候補の周りを切り出して読む。effScale は全体処理での実効縮尺（これより十分拡大できる候補だけ読む）
+async function roiLines(src,vw,vh,cands,rs,effScale){
+  const lines=[]; let used=0; const now=performance.now();
+  for(const c of cands){
+    // すでに追跡中（直近で読めている）の表示に重なる候補は読み直さない
+    const cx=(c.x+c.w/2)*rs, cy=(c.y+c.h/2)*rs;
+    if(tracks.some(t=>now-t.last<STALE_MS && cx>=t.box.x && cx<=t.box.x+t.box.w && cy>=t.box.y && cy<=t.box.y+t.box.h)) continue;
+    const px=c.w*0.9, py=c.h*0.9; // シールの周り（「本体価格の」「引き」「の為」など）も含める
+    const x=Math.max(0,c.x-px), y=Math.max(0,c.y-py), w=Math.min(vw,c.x+c.w+px)-x, h=Math.min(vh,c.y+c.h+py)-y;
+    const s=Math.min(ROI_UPSCALE, ROI_SIDE/Math.max(w,h));
+    if(s<effScale*1.5) continue; // 全体処理と大差ない＝十分大きく写っている
+    const cw=Math.max(8,Math.round(w*s)), ch=Math.max(8,Math.round(h*s));
+    roiCanvas.width=cw; roiCanvas.height=ch; roiCtx.drawImage(src,x,y,w,h,0,0,cw,ch);
+    const img=roiCtx.getImageData(0,0,cw,ch);
+    const bx=(await detect(det,img)).filter(b=>b.h>=10&&b.w>=10).sort((a,b)=>b.w*b.h-a.w*a.h).slice(0,12);
+    used++; if(!bx.length) continue;
+    for(const r of await recognize(rec,img,bx,dict)){
+      if(!r||r.conf<MIN_CONF||!r.text.trim()) continue;
+      lines.push({text:r.text,conf:r.conf,box:{x:(x+r.box.x/s)*rs,y:(y+r.box.y/s)*rs,w:r.box.w/s*rs,h:r.box.h/s*rs}}); // → rec画像座標
+    }
+  }
+  return {lines,used};
+}
+// 同じ文字列を全体処理と候補処理の両方で読んだら、スコアの高い方を残す
+function mergeLines(a,b){ const out=[...a];
+  for(const l of b){ const i=out.findIndex(o=>iou(o.box,l.box)>0.3); if(i<0) out.push(l); else if(l.conf>out[i].conf) out[i]=l; }
+  return out; }
+
 /* ================= メインループ ================= */
-async function processFrame(){
-  const vw=video.videoWidth,vh=video.videoHeight; if(!vw||!vh) return false;
+async function processFrame(src=video){
+  const vw=src.videoWidth||src.width,vh=src.videoHeight||src.height; if(!vw||!vh) return false;
+  const t0=performance.now();
+  const cands=ROI_MAX?colorCandidates(src,vw,vh):[];
   const rs=Math.min(1,REC_SIDE/Math.max(vw,vh)); recCanvas.width=Math.round(vw*rs); recCanvas.height=Math.round(vh*rs);
-  recCtx.drawImage(video,0,0,recCanvas.width,recCanvas.height);
+  recCtx.drawImage(src,0,0,recCanvas.width,recCanvas.height);
   const ds=Math.min(1,DET_SIDE/Math.max(recCanvas.width,recCanvas.height)); detCanvas.width=Math.round(recCanvas.width*ds); detCanvas.height=Math.round(recCanvas.height*ds);
   detCtx.drawImage(recCanvas,0,0,detCanvas.width,detCanvas.height);
   const recImg=recCtx.getImageData(0,0,recCanvas.width,recCanvas.height), detImg=detCtx.getImageData(0,0,detCanvas.width,detCanvas.height);
@@ -725,10 +809,15 @@ async function processFrame(){
   const tA=performance.now();
   let boxes=(await detect(det,detImg)).map(b=>({x:b.x/ds,y:b.y/ds,w:b.w/ds,h:b.h/ds}))
     .filter(b=>b.h>=12&&b.w>=12).sort((a,b)=>b.w*b.h-a.w*a.h).slice(0,MAX_BOXES);
-  if(!boxes.length){ updateTracks([]); return true; }
+  const full=boxes.length?(await recognize(rec,recImg,boxes,dict)).filter(r=>r&&r.conf>=MIN_CONF&&r.text.trim()):[];
   const tB=performance.now();
-  const lines=(await recognize(rec,recImg,boxes,dict)).filter(r=>r&&r.conf>=MIN_CONF&&r.text.trim());
-  if(window.__dbg) console.log(`det ${Math.round(tB-tA)}ms rec ${Math.round(performance.now()-tB)}ms boxes ${boxes.length} :: `+lines.map(l=>l.text).join(" | "));
+  const roi=await roiLines(src,vw,vh,cands,rs,rs*ds);
+  const tC=performance.now();
+  const lines=mergeLines(full,roi.lines);
+  lastCands=cands;
+  diag={res:`${vw}×${vh}`,color:Math.round(tA-t0),full:Math.round(tB-tA),roi:Math.round(tC-tB),cands:cands.length,used:roi.used,roiHits:roi.lines.length,
+    texts:lines.map(l=>l.text)};
+  if(window.__dbg) console.log(JSON.stringify(diag));
   updateTracks(classify(lines));
   return true;
 }
@@ -740,6 +829,7 @@ async function loop(){
     try{ await processFrame(); }catch(e){ console.error(e); setStat("解析エラー"); await new Promise(r=>setTimeout(r,1000)); }
     const dt=performance.now()-t0; avg=avg?avg*.7+dt*.3:dt;
     if(!state.paused) setStat(`${backend} ${(avg/1000).toFixed(1)}秒/回`,true);
+    renderDiag();
     drawOverlay();
     await new Promise(r=>setTimeout(r,60));
   }
@@ -774,7 +864,7 @@ async function makeSessions(detBuf,recBuf){
     return [d,r];
   };
   if(navigator.gpu){ try{ const s=await tryEP("webgpu"); backend="GPU"; return s; }catch(e){ console.warn("webgpu unavailable",e); } }
-  const s=await tryEP("wasm"); backend="CPU"; DET_SIDE=960; MAX_BOXES=28; return s;
+  const s=await tryEP("wasm"); backend="CPU"; DET_SIDE=960; MAX_BOXES=28; ROI_MAX=2; return s;
 }
 
 const streamLive=()=>!!stream && stream.getVideoTracks().some(t=>t.readyState==="live");
@@ -798,7 +888,7 @@ async function start(){
   go.textContent="カメラを準備中…";
   if(!streamLive()){
     stopStream();
-    try{ stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080}}}); }
+    try{ stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:3840},height:{ideal:2160}}}); } // 遠くのシールを読むため、出せる範囲で高解像度
     catch(e){ return fail(e.name==="NotAllowedError"?"カメラの使用が許可されませんでした。ブラウザの設定でこのサイトのカメラを許可してから、もう一度押してください。手入力だけなら下のボタンから使えます。":"カメラを起動できませんでした（"+e.name+"）。手入力だけなら下のボタンから使えます。"); }
     video.srcObject=stream;
   }
