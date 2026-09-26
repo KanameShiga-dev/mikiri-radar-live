@@ -114,6 +114,8 @@ video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;backgrou
 .fine{font-size:12px;color:var(--muted);margin:0}
 .progress{height:6px;border-radius:99px;background:var(--line);overflow:hidden}
 .progress i{display:block;height:100%;width:0;background:var(--exp);transition:width .2s}
+.go.resume{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);width:auto;padding:0 28px}
+.go.resume:active{transform:translate(-50%,calc(-50% + 2px))}
 .msg{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--exp);border-radius:10px;padding:10px 12px;font-size:14px}
 
 /* dialogs */
@@ -163,6 +165,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     </div>
   </div>
   <div id="diag" hidden></div>
+  <button class="go resume" id="resumeBtn" hidden>カメラを再開</button>
   <div id="banner" aria-live="polite"></div>
   <div id="toast" role="status" hidden><span id="toastText"></span><button id="toastUndo">元に戻す</button></div>
 
@@ -840,7 +843,7 @@ async function processFrame(src=video){
 async function loop(){
   let avg=0;
   while(state.running){
-    if(state.paused||document.hidden){ await new Promise(r=>setTimeout(r,250)); continue; }
+    if(state.paused||document.hidden||!stream){ await new Promise(r=>setTimeout(r,250)); continue; } // カメラ停止中は解析しない
     const t0=performance.now();
     try{ await processFrame(); }catch(e){ console.error(e); setStat("解析エラー"); await new Promise(r=>setTimeout(r,1000)); }
     const dt=performance.now()-t0; avg=avg?avg*.7+dt*.3:dt;
@@ -883,6 +886,8 @@ async function makeSessions(detBuf,recBuf){
   const s=await tryEP("wasm"); backend="CPU"; DET_SIDE=960; MAX_BOXES=28; ROI_MAX=2; return s;
 }
 
+// 遠くのシールを読むため、出せる範囲で高解像度を要求する
+const openCamera=()=>navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:3840},height:{ideal:2160}}});
 const streamLive=()=>!!stream && stream.getVideoTracks().some(t=>t.readyState==="live");
 function stopStream(){ if(stream) for(const t of stream.getTracks()) t.stop(); stream=null; video.srcObject=null; }
 async function keepAwake(){
@@ -904,7 +909,7 @@ async function start(){
   go.textContent="カメラを準備中…";
   if(!streamLive()){
     stopStream();
-    try{ stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:3840},height:{ideal:2160}}}); } // 遠くのシールを読むため、出せる範囲で高解像度
+    try{ stream=await openCamera(); }
     catch(e){ return fail(e.name==="NotAllowedError"?"カメラの使用が許可されませんでした。ブラウザの設定でこのサイトのカメラを許可してから、もう一度押してください。手入力だけなら下のボタンから使えます。":"カメラを起動できませんでした（"+e.name+"）。手入力だけなら下のボタンから使えます。"); }
     video.srcObject=stream;
   }
@@ -930,11 +935,32 @@ async function start(){
   state.running=true; keepAwake(); loop();
 }
 $("goBtn").onclick=start;
+/* 画面から外れたらカメラを止め、戻ったら再開する（裏のタブでカメラを使い続けないため） */
+let resumeOnShow=false;
+function suspendCamera(){
+  if(!state.running||!stream) return;
+  resumeOnShow=true; stopStream(); geoStop();
+  try{ wakeLock?.release(); }catch(e){} wakeLock=null;
+  tracks=[]; drawOverlay();
+}
+async function resumeCamera(){
+  if(!resumeOnShow||!state.running||document.hidden) return; resumeOnShow=false;
+  try{
+    stream=await openCamera(); video.srcObject=stream;
+    if(!state.paused) await video.play().catch(()=>{});
+    $("resumeBtn").hidden=true; keepAwake(); geoStart();
+  }catch(e){ console.warn("resume",e); resumeOnShow=true; $("resumeBtn").hidden=false; setStat("カメラ停止中"); }
+}
+$("resumeBtn").onclick=()=>{ resumeOnShow=true; resumeCamera(); };
 document.addEventListener("visibilitychange",()=>{
-  if(document.hidden || !state.running) return;
+  if(document.hidden){ suspendCamera(); return; }
+  if(!state.running) return;
+  if(resumeOnShow){ resumeCamera(); return; }
   if(!state.paused) video.play().catch(()=>{});
   keepAwake(); // 非表示になると Wake Lock は解除されるので取り直す
 });
+addEventListener("pagehide",suspendCamera);
+addEventListener("pageshow",e=>{ if(e.persisted) resumeCamera(); });
 
 loadLog();
 if("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("sw.js").catch(e=>console.warn("sw",e));
