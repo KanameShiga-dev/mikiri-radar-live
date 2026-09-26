@@ -36,6 +36,8 @@ video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;backgrou
 .box.low .tag{bottom:auto;top:0;margin:4px}
 .box.stale{opacity:.45}
 .box.unsure{border-style:dashed}
+.box.weak{border-width:1.5px;box-shadow:none;opacity:.7}
+.box.weak .tag{font-size:12px;padding:3px 6px}
 
 /* top */
 .top{position:absolute;left:0;right:0;top:0;padding:calc(var(--st) + 10px) 14px 10px;display:flex;justify-content:space-between;align-items:center;gap:10px;background:linear-gradient(to bottom,rgba(0,0,0,.6),rgba(0,0,0,0));pointer-events:none}
@@ -169,7 +171,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
     <p class="lead">売場にカメラを向けるだけで、値札やシールの文字をスマホの中で読み取り、次の表示を見つけたら枠と音で知らせます。</p>
     <div class="legend">
       <div style="--c:var(--disc)"><span class="sw"></span><p>割引 <span>3割引・半額・20%引・30円引</span></p></div>
-      <div style="--c:var(--exp)"><span class="sw"></span><p>賞味期限 <span>「賞味期限9/26の為」や容器の印字日付。残り日数も出します</span></p></div>
+      <div style="--c:var(--exp)"><span class="sw"></span><p>賞味期限 <span>「賞味期限9/26の為」や容器の印字日付。日付が読めたときだけ知らせ、残り日数も出します</span></p></div>
       <div style="--c:var(--chal)"><span class="sw"></span><p>安さへの挑戦 <span>プライスカード</span></p></div>
     </div>
     <p class="fine">読み取りは誤ることがあります。枠が点線で「?」が付いた表示は、読み取りが不確かなものです。見つけた表示は下の一覧からタップして、日付を直したり誤検出として消したりできます。</p>
@@ -245,6 +247,7 @@ const MIN_CONF = 0.45;      // これ未満の読み取りは捨てる
 const LOW_CONF = 0.75;      // これ未満は「不確か」として点線・?付きで表示
 const TRACK_TTL = 3200, STALE_MS = 1600, REALERT_MS = 12000;
 const LOG_MAX = 30;
+const LOG_DEDUP_MS = 60000; // 同じ「種類＋判定結果」はこの間は一覧に重ねて記録しない
 
 const CATS = {
   discount:  {name:"割引",         c:"var(--disc)", ci:"var(--disc-ink)", tone:[880,1175]},
@@ -330,6 +333,7 @@ const norm=s=>s.normalize("NFKC").replace(/\s+/g,"");
 const RE_CHAL=/安[さきぎざそ]へ|[さきぎざをそ]への[挑抗張机所兆桃]|への挑|挑戦/;
 const RE_DISC=/([0-9一二三四五六七八九])割(?!増|安|高|合|れ)|割引|割り引|半額|[0-9]{1,2}[%％](?:引|OFF|オフ)|[0-9]{1,4}円引|値引/i;
 const RE_EXP=/賞味|味期限|消費期|期限/;
+const RE_EXP_STRONG=/の為|のため|間近|迫/; // 日付が読めなくても見切り品と分かる文言
 const RE_YMD=/(?:^|[^0-9])(\d{2})[.．\-\/・](\d{1,2})[.．\-\/・](\d{1,2})(?![0-9])/;
 const KAN={一:1,二:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9};
 
@@ -393,6 +397,10 @@ function label(d){
   return "安さへの挑戦";
 }
 const unsure=d=>d.conf!=null && d.conf<LOW_CONF;
+// 日付のない「賞味期限」の文字だけ（どの商品にも印刷されている項目名）は知らせない
+const weak=d=>d.type==="expiry" && !d.info.date && !RE_EXP_STRONG.test(d.text||"");
+// 読み違い（黄味期限/営味期限など）に左右されない、判定結果ベースのキー
+const meaningKey=d=>d.type+"|"+(d.type==="discount"?label(d):d.type==="expiry"?(d.info.date?`${d.info.date.month}-${d.info.date.day}`:"text"):"");
 
 /* ================= 状態 ================= */
 const $=id=>document.getElementById(id);
@@ -441,8 +449,8 @@ function drawOverlay(){
     const c=CATS[t.type]; el.style.setProperty("--c",c.c); el.style.setProperty("--ci",c.ci);
     const f=frameScale, x=dx+t.box.x*f*sc, y=dy+t.box.y*f*sc, w=t.box.w*f*sc, h=t.box.h*f*sc;
     el.style.left=x+"px"; el.style.top=y+"px"; el.style.width=w+"px"; el.style.height=h+"px";
-    el.classList.toggle("low", y<70); el.classList.toggle("stale", now-t.last>STALE_MS); el.classList.toggle("unsure", unsure(t));
-    el.firstChild.textContent=label(t)+(unsure(t)?" ?":"");
+    el.classList.toggle("low", y<70); el.classList.toggle("stale", now-t.last>STALE_MS); el.classList.toggle("unsure", unsure(t)); el.classList.toggle("weak", weak(t));
+    el.firstChild.textContent= weak(t) ? "賞味期限（日付なし）" : label(t)+(unsure(t)?" ?":"");
     el.firstChild.style.left = x<0 ? (Math.min(-x, Math.max(0,w-60))+4)+"px" : "";
   }
   for(const el of [...overlay.children]) if(!keep.has(el.id)) el.remove();
@@ -472,7 +480,9 @@ function thumbFrom(box){
 
 /* ================= 記録一覧 ================= */
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-function loadLog(){ try{ const a=JSON.parse(localStorage.getItem("mikiri.log")||"[]"); if(Array.isArray(a)) logItems=a.filter(x=>x&&CATS[x.type]&&x.info).slice(0,LOG_MAX); }catch(e){} }
+function loadLog(){ try{ const a=JSON.parse(localStorage.getItem("mikiri.log")||"[]"); if(Array.isArray(a)) logItems=a.filter(x=>x&&CATS[x.type]&&x.info).slice(0,LOG_MAX); }catch(e){}
+  // 再読み込み直後に同じ表示を重ねて記録しないよう、復元した記録から重複判定を作り直す
+  for(const it of logItems){ if(it.source!=="camera") continue; const k=meaningKey(it); if(!(logKeys.get(k)>it.at)) logKeys.set(k,it.at); } }
 function saveLog(){
   try{ localStorage.setItem("mikiri.log",JSON.stringify(logItems)); }
   catch(e){ try{ localStorage.setItem("mikiri.log",JSON.stringify(logItems.map(x=>({...x,thumb:""})))); }catch(e2){} } // 容量不足なら画像なしで保存
@@ -507,8 +517,8 @@ function cardEl(it){
 function renderLog(){ $("log").replaceChildren(...logItems.map(cardEl)); }
 function pushLog(it){ logItems.unshift(it); if(logItems.length>LOG_MAX) logItems.length=LOG_MAX; renderLog(); saveLog(); }
 function addLog(d){
-  const key=d.type+"|"+(d.type==="expiry"&&d.info.date?`${d.info.date.month}-${d.info.date.day}`:"")+"|"+d.text.slice(0,10);
-  const now=Date.now(); if(logKeys.has(key) && now-logKeys.get(key)<90000) return; logKeys.set(key,now);
+  const key=meaningKey(d);
+  const now=Date.now(); if(logKeys.has(key) && now-logKeys.get(key)<LOG_DEDUP_MS) return; logKeys.set(key,now);
   pushLog({id:uid(),type:d.type,info:structuredClone(d.info),text:d.text,conf:d.conf,thumb:thumbFrom(d.box),at:now,source:"camera"});
 }
 
@@ -575,16 +585,22 @@ function updateTracks(dets){
     let best=null,bs=0;
     for(const t of tracks){ if(t.type!==d.type) continue; const s=iou(t.box,d.box); const cx=Math.abs((t.box.x+t.box.w/2)-(d.box.x+d.box.w/2)), cy=Math.abs((t.box.y+t.box.h/2)-(d.box.y+d.box.h/2));
       const sc=s>0.1?s:(cx<Math.max(t.box.w,d.box.w)*.6&&cy<Math.max(t.box.h,d.box.h)*.8?0.1:0); if(sc>bs){bs=sc;best=t;} }
-    if(best){ best.box=d.box; best.last=now; best.text=d.text; best.conf=d.conf; if(d.info.date||d.info.pct||!Object.keys(best.info).length) best.info=d.info; }
-    else { const t={id:nextId++,...d,first:now,last:now}; tracks.push(t);
-      if(state.enabled.has(d.type)){
-        const recent=recentAlerts.some(a=>a.type===d.type && now-a.at<REALERT_MS && (a.text===d.text.slice(0,8)));
-        if(!recent){ recentAlerts.push({type:d.type,text:d.text.slice(0,8),at:now}); beep(CATS[d.type].tone); try{navigator.vibrate&&navigator.vibrate([80,40,80]);}catch(e){} banner(d); }
-        addLog(d);
-      } }
+    let t=best;
+    if(t){ t.box=d.box; t.last=now; t.text=d.text; t.conf=d.conf; if(d.info.date||d.info.pct||!Object.keys(t.info).length) t.info=d.info; }
+    else { t={id:nextId++,...d,first:now,last:now,alerted:false}; tracks.push(t); }
+    maybeAlert(t,now);
   }
   tracks=tracks.filter(t=>now-t.last<TRACK_TTL);
   recentAlerts=recentAlerts.filter(a=>now-a.at<REALERT_MS);
+}
+// 1つの追跡対象につき1回だけ知らせる。日付なしの賞味期限は、追跡中に日付が読めた時点で知らせる
+function maybeAlert(t,now){
+  if(t.alerted || !state.enabled.has(t.type) || weak(t)) return;
+  t.alerted=true;
+  const k=meaningKey(t);
+  if(!recentAlerts.some(a=>a.key===k && now-a.at<REALERT_MS)){
+    recentAlerts.push({key:k,at:now}); beep(CATS[t.type].tone); try{navigator.vibrate&&navigator.vibrate([80,40,80]);}catch(e){} banner(t); }
+  addLog(t);
 }
 
 /* ================= メインループ ================= */
