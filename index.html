@@ -67,6 +67,10 @@ video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;backgrou
 /* bottom sheet */
 .sheet{position:absolute;left:0;right:0;bottom:0;padding:10px 12px calc(var(--sb) + 12px);background:linear-gradient(to top,rgba(0,0,0,.78) 60%,rgba(0,0,0,0));display:flex;flex-direction:column;gap:10px}
 .row{display:flex;gap:8px;align-items:center}
+/* 操作アイコンは一覧の上・右端に縦並び（一覧の高さが変わっても追従） */
+.side{position:absolute;right:12px;bottom:100%;margin-bottom:8px;display:flex;flex-direction:column;gap:10px}
+.side .icon{width:44px;height:44px}
+@media (max-height:560px){.side{flex-direction:row}} /* 横向きなど高さが足りないときは横一列 */
 #chips{flex:1;min-width:0;overflow-x:auto;scrollbar-width:none;gap:6px}
 #chips::-webkit-scrollbar{display:none}
 .chip{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;background:var(--panel);border:1.5px solid var(--line);border-radius:99px;padding:7px 10px 7px 8px;font-size:12.5px;font-weight:700;white-space:nowrap}
@@ -79,7 +83,7 @@ video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;backgrou
 .icon[aria-pressed="false"]{color:var(--muted)}
 .icon svg{width:20px;height:20px}
 .log{display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:2px;min-height:0}
-.log:empty::before{content:"見つけた表示がここにたまります。タップで訂正・削除できます";color:var(--muted);font-size:13px;padding:6px 2px}
+.log:empty::before{content:"見つけた表示がここにたまります（12時間で自動的に消えます）。タップで訂正・削除できます";color:var(--muted);font-size:13px;padding:6px 2px}
 .card{flex:0 0 auto;scroll-snap-align:start;display:grid;grid-template-columns:52px auto;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--c);border-radius:12px;padding:8px 12px 8px 8px;max-width:78vw;text-align:left}
 .card img,.card .noimg{width:52px;height:52px;border-radius:7px;object-fit:cover;background:#222}
 .card .noimg{display:grid;place-items:center;color:var(--muted);font-size:12px;font-weight:700}
@@ -163,8 +167,7 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
   <div id="toast" role="status" hidden><span id="toastText"></span><button id="toastUndo">元に戻す</button></div>
 
   <div class="sheet" id="sheet" hidden>
-    <div class="row">
-      <div class="row" id="chips"></div>
+    <div class="side" id="side">
       <button class="icon" id="addBtn" aria-label="手入力で記録">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
       </button>
@@ -177,7 +180,11 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
       <button class="icon" id="pauseBtn" aria-pressed="false" aria-label="一時停止">
         <svg viewBox="0 0 24 24" fill="currentColor"><path id="pauseIcon" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
       </button>
+      <button class="icon" id="clearBtn" aria-label="一覧をすべて消す">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>
+      </button>
     </div>
+    <div class="row" id="chips"></div>
     <div class="ignrow" id="ignRow" hidden><span id="ignText"></span><button id="ignOpen">確認・解除</button></div>
     <div class="log" id="log"></div>
   </div>
@@ -295,6 +302,7 @@ const LOW_CONF = 0.75;      // これ未満は「不確か」として点線・?
 const TRACK_TTL = 3200, STALE_MS = 1600, REALERT_MS = 12000;
 const LOG_MAX = 30;
 const LOG_DEDUP_MS = 60000; // 同じ「種類＋判定結果」はこの間は一覧に重ねて記録しない
+const LOG_TTL_MS = 12*3600*1000; // 記録はこの時間で自動的に消す（1回の買い物で使う想定）
 
 const CATS = {
   discount:  {name:"割引",         c:"var(--disc)", ci:"var(--disc-ink)", hex:"#F0493C", tone:[880,1175]},
@@ -569,7 +577,8 @@ $("geoDlg").addEventListener("close",()=>{ if($("geoDlg").returnValue!=="ok") re
 
 /* ================= 記録一覧 ================= */
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-function loadLog(){ try{ const a=JSON.parse(localStorage.getItem("mikiri.log")||"[]"); if(Array.isArray(a)) logItems=a.filter(x=>x&&CATS[x.type]&&x.info).slice(0,LOG_MAX); }catch(e){}
+const fresh=x=>Date.now()-x.at<LOG_TTL_MS;
+function loadLog(){ try{ const a=JSON.parse(localStorage.getItem("mikiri.log")||"[]"); if(Array.isArray(a)) logItems=a.filter(x=>x&&CATS[x.type]&&x.info&&fresh(x)).slice(0,LOG_MAX); }catch(e){}
   // 再読み込み直後に同じ表示を重ねて記録しないよう、復元した記録から重複判定を作り直す
   for(const it of logItems){ if(it.source!=="camera") continue; const k=meaningKey(it); if(!(logKeys.get(k)>it.at)) logKeys.set(k,it.at); } }
 function saveLog(){
@@ -605,7 +614,14 @@ function cardEl(it){
   return card;
 }
 function renderLog(){ $("log").replaceChildren(...logItems.map(cardEl)); }
-function pushLog(it){ logItems.unshift(it); if(logItems.length>LOG_MAX) logItems.length=LOG_MAX; renderLog(); saveLog(); }
+function pushLog(it){ logItems.unshift(it); logItems=logItems.filter(fresh).slice(0,LOG_MAX); renderLog(); saveLog(); }
+// 起動したまま時間がたった場合も、古い記録を消す
+setInterval(()=>{ const n=logItems.length; logItems=logItems.filter(fresh); if(logItems.length!==n){ renderLog(); saveLog(); } },60000);
+$("clearBtn").onclick=()=>{
+  if(!logItems.length){ toast("一覧は空です"); return; }
+  const prev=logItems, prevKeys=new Map(logKeys); logItems=[]; logKeys.clear(); renderLog(); saveLog();
+  toast(`一覧の${prev.length}件を消しました`, ()=>{ logItems=[...prev.filter(fresh),...logItems].slice(0,LOG_MAX); for(const [k,v] of prevKeys) if(!logKeys.has(k)) logKeys.set(k,v); renderLog(); saveLog(); });
+};
 function addLog(d){
   const key=meaningKey(d);
   const now=Date.now(); if(logKeys.has(key) && now-logKeys.get(key)<LOG_DEDUP_MS) return; logKeys.set(key,now);
