@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0B0D0C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>見切りレーダー LIVE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" crossorigin href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#0B0D0C; --panel:rgba(14,17,16,.82); --ink:#F2F4F0; --muted:#A3ABA5; --line:rgba(255,255,255,.14);
+  --disc:#F0493C; --disc-ink:#fff;
+  --exp:#F5C21C; --exp-ink:#1A1400;
+  --chal:#2A9CC0; --chal-ink:#fff;
+  --display:"Dela Gothic One","Hiragino Sans","Yu Gothic",sans-serif;
+  --body:"Zen Kaku Gothic New","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",sans-serif;
+  --st:env(safe-area-inset-top,0px); --sb:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+:focus-visible{outline:3px solid var(--exp);outline-offset:2px}
+[hidden]{display:none!important}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+#app{position:fixed;inset:0;overflow:hidden}
+video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+#overlay{position:absolute;inset:0;pointer-events:none}
+.box{position:absolute;border:3px solid var(--c);border-radius:8px;box-shadow:0 0 0 1px rgba(0,0,0,.5),0 0 18px color-mix(in srgb,var(--c) 55%,transparent);transition:left .25s,top .25s,width .25s,height .25s,opacity .4s}
+.box .tag{position:absolute;left:-3px;bottom:100%;margin-bottom:4px;background:var(--c);color:var(--ci);font:700 14px/1 var(--body);padding:5px 8px;border-radius:6px;white-space:nowrap;font-variant-numeric:tabular-nums;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+.box.low .tag{bottom:auto;top:0;margin:4px}
+.box.stale{opacity:.45}
+.box.unsure{border-style:dashed}
+
+/* top */
+.top{position:absolute;left:0;right:0;top:0;padding:calc(var(--st) + 10px) 14px 10px;display:flex;justify-content:space-between;align-items:center;gap:10px;background:linear-gradient(to bottom,rgba(0,0,0,.6),rgba(0,0,0,0));pointer-events:none}
+.brand{font-family:var(--display);font-size:17px;letter-spacing:.03em}
+.brand b{color:var(--disc);font-weight:400}
+.topr{display:flex;gap:6px;align-items:center}
+.stat{pointer-events:auto;font-size:12px;font-weight:700;background:var(--panel);border:1px solid var(--line);padding:5px 10px;border-radius:99px;font-variant-numeric:tabular-nums;display:flex;gap:6px;align-items:center}
+.stat .led{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.stat.run .led{background:#4ADE80;animation:blink 1.2s infinite}
+@keyframes blink{50%{opacity:.3}}
+
+/* banner */
+#banner{position:absolute;left:14px;right:14px;top:calc(var(--st) + 56px);display:flex;justify-content:center;pointer-events:none}
+#banner .b{background:var(--c);color:var(--ci);font-family:var(--display);font-size:24px;letter-spacing:.02em;padding:10px 18px;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.5);transform-origin:top center;animation:pop 2.4s ease forwards;text-align:center;max-width:100%}
+#banner .b small{display:block;font-family:var(--body);font-weight:700;font-size:13px;opacity:.9;margin-top:2px}
+@keyframes pop{0%{transform:scale(.6);opacity:0}10%{transform:scale(1.05);opacity:1}16%{transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:translateY(-8px)}}
+
+/* toast */
+#toast{position:absolute;left:12px;right:12px;top:calc(var(--st) + 130px);margin:0 auto;max-width:440px;display:flex;gap:10px;align-items:center;background:#1C2120;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13.5px;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+#toast span{flex:1}
+#toast button{flex:0 0 auto;font-weight:700;color:var(--exp);min-height:40px;padding:0 8px}
+
+/* bottom sheet */
+.sheet{position:absolute;left:0;right:0;bottom:0;padding:10px 12px calc(var(--sb) + 12px);background:linear-gradient(to top,rgba(0,0,0,.78) 60%,rgba(0,0,0,0));display:flex;flex-direction:column;gap:10px}
+.row{display:flex;gap:8px;align-items:center}
+#chips{flex:1;min-width:0;overflow-x:auto;scrollbar-width:none;gap:6px}
+#chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;background:var(--panel);border:1.5px solid var(--line);border-radius:99px;padding:7px 10px 7px 8px;font-size:12.5px;font-weight:700;white-space:nowrap}
+.chip .sw{width:12px;height:12px;border-radius:3px;background:var(--c);opacity:.25}
+.chip[aria-pressed="true"]{border-color:var(--c)}
+.chip[aria-pressed="true"] .sw{opacity:1}
+.chip[aria-pressed="false"]{color:var(--muted)}
+.spacer{flex:1}
+.icon{flex:0 0 auto;width:40px;height:40px;border-radius:50%;background:var(--panel);border:1.5px solid var(--line);display:grid;place-items:center}
+.icon[aria-pressed="false"]{color:var(--muted)}
+.icon svg{width:20px;height:20px}
+.log{display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:2px;min-height:0}
+.log:empty::before{content:"見つけた表示がここにたまります。タップで訂正・削除できます";color:var(--muted);font-size:13px;padding:6px 2px}
+.card{flex:0 0 auto;scroll-snap-align:start;display:grid;grid-template-columns:52px auto;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--c);border-radius:12px;padding:8px 12px 8px 8px;max-width:78vw;text-align:left}
+.card img,.card .noimg{width:52px;height:52px;border-radius:7px;object-fit:cover;background:#222}
+.card .noimg{display:grid;place-items:center;color:var(--muted);font-size:12px;font-weight:700}
+.card .k{display:flex;gap:6px;align-items:center;flex-wrap:nowrap}
+.kchip{background:var(--c);color:var(--ci);font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;white-space:nowrap}
+.urg{font-size:11px;font-weight:700;color:var(--disc);white-space:nowrap}
+.sc{font-size:11px;color:var(--muted);white-space:nowrap}
+.sc.lowc{color:var(--exp)}
+.card .h{font-family:var(--display);font-size:17px;line-height:1.25;font-variant-numeric:tabular-nums;white-space:nowrap}
+.card .t{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:48vw}
+
+/* start / message screen */
+#start{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-end;gap:18px;padding:calc(var(--st) + 24px) 20px calc(var(--sb) + 24px);background:
+  radial-gradient(120% 60% at 50% 0%,rgba(245,194,28,.14),transparent 60%),var(--bg);overflow:auto}
+#start h1{font-family:var(--display);font-weight:400;font-size:40px;line-height:1.05;margin:0}
+#start h1 b{color:var(--disc);font-weight:400}
+#start .lead{color:var(--muted);margin:0;max-width:34em}
+.legend{display:flex;flex-direction:column;gap:8px}
+.legend div{display:flex;gap:10px;align-items:baseline}
+.legend .sw{flex:0 0 auto;width:14px;height:14px;border-radius:3px;background:var(--c);transform:translateY(2px)}
+.legend p{margin:0;font-size:14px}
+.legend p span{color:var(--muted);font-size:13px}
+.go{background:var(--disc);color:#fff;font-family:var(--display);font-size:20px;letter-spacing:.04em;border-radius:99px;min-height:60px;width:100%;box-shadow:0 4px 0 #8f1f16}
+.go:active{transform:translateY(2px);box-shadow:0 2px 0 #8f1f16}
+.go[disabled]{opacity:.5}
+.go2{border:1.5px solid var(--line);background:var(--panel);border-radius:99px;min-height:48px;width:100%;font-weight:700}
+.link{align-self:flex-start;color:var(--muted);text-decoration:underline;font-size:12px;padding:6px 0}
+.fine{font-size:12px;color:var(--muted);margin:0}
+.progress{height:6px;border-radius:99px;background:var(--line);overflow:hidden}
+.progress i{display:block;height:100%;width:0;background:var(--exp);transition:width .2s}
+.msg{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--exp);border-radius:10px;padding:10px 12px;font-size:14px}
+
+/* dialogs */
+dialog{background:#15191A;color:var(--ink);border:1px solid var(--line);border-radius:16px;padding:0;width:min(440px,calc(100vw - 24px));max-height:calc(100dvh - 40px)}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+.dlg{padding:16px;display:flex;flex-direction:column;gap:12px}
+.dlg h2{margin:0;font-size:18px}
+.dlg label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700}
+.dlg input[type=text],.dlg input[type=date]{font:inherit;color:var(--ink);background:#0B0D0C;border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-height:44px;color-scheme:dark;width:100%}
+.dlg p{margin:0}
+.btn{min-height:44px;padding:0 16px;border-radius:99px;background:var(--panel);border:1.5px solid var(--line);font-weight:700}
+.btn.primary{background:var(--exp);color:var(--exp-ink);border-color:transparent}
+.btn.danger{border-color:var(--disc);color:#FF9A90}
+.dlg-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.seg{display:flex;gap:6px;flex-wrap:wrap;border:0;padding:0;margin:0}
+.seg label{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--line);border-radius:99px;padding:6px 12px;font-size:13px;font-weight:700;min-height:40px}
+.seg label:has(input:checked){border-color:var(--c);background:color-mix(in srgb,var(--c) 22%,transparent)}
+.seg input{accent-color:var(--exp);margin:0}
+.ed-head{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center}
+.ed-head img{width:96px;height:96px;border-radius:10px;object-fit:cover;background:#222}
+.ed-main{font-family:var(--display);font-size:22px;line-height:1.2}
+.pre{white-space:pre-line;font-size:13px;color:var(--muted)}
+.lic{font-size:13px;display:flex;flex-direction:column;gap:10px}
+.lic a{color:var(--exp)}
+@media (prefers-reduced-motion: reduce){#banner .b{animation:none}.stat.run .led{animation:none}.box{transition:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <video id="video" playsinline muted autoplay></video>
+  <div id="overlay"></div>
+
+  <div class="top">
+    <div class="brand">見切りレーダー<b>.</b></div>
+    <div class="topr">
+      <button class="stat" id="camBtn" hidden>カメラを起動</button>
+      <div class="stat" id="stat"><span class="led"></span><span id="statText">停止中</span></div>
+    </div>
+  </div>
+  <div id="banner" aria-live="polite"></div>
+  <div id="toast" role="status" hidden><span id="toastText"></span><button id="toastUndo">元に戻す</button></div>
+
+  <div class="sheet" id="sheet" hidden>
+    <div class="row">
+      <div class="row" id="chips"></div>
+      <button class="icon" id="addBtn" aria-label="手入力で記録">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button class="icon" id="soundBtn" aria-pressed="true" aria-label="通知音">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path id="soundWave" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>
+      </button>
+      <button class="icon" id="pauseBtn" aria-pressed="false" aria-label="一時停止">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path id="pauseIcon" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+      </button>
+    </div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div id="start">
+    <div>
+      <h1>見切り<br>レーダー<b>.</b></h1>
+    </div>
+    <p class="lead">売場にカメラを向けるだけで、値札やシールの文字をスマホの中で読み取り、次の表示を見つけたら枠と音で知らせます。</p>
+    <div class="legend">
+      <div style="--c:var(--disc)"><span class="sw"></span><p>割引 <span>3割引・半額・20%引・30円引</span></p></div>
+      <div style="--c:var(--exp)"><span class="sw"></span><p>賞味期限 <span>「賞味期限9/26の為」や容器の印字日付。残り日数も出します</span></p></div>
+      <div style="--c:var(--chal)"><span class="sw"></span><p>安さへの挑戦 <span>プライスカード</span></p></div>
+    </div>
+    <p class="fine">読み取りは誤ることがあります。枠が点線で「?」が付いた表示は、読み取りが不確かなものです。見つけた表示は下の一覧からタップして、日付を直したり誤検出として消したりできます。</p>
+    <div class="msg" id="startMsg" hidden></div>
+    <div id="progWrap" hidden><div class="progress"><i id="prog"></i></div><p class="fine" id="progText" style="margin-top:6px"></p></div>
+    <button class="go" id="goBtn">カメラを起動</button>
+    <button class="go2" id="manualBtn">カメラを使わずに手入力で記録</button>
+    <p class="fine">初回だけ文字認識モデル（約31MB）と実行エンジン（約22MB）、合計約53MBをダウンロードします。Wi‑Fiでの起動がおすすめです。2回目以降は端末に保存したものを使います。写真や映像はどこにも送信しません。</p>
+    <button class="link" id="licBtn">ライセンス・出典</button>
+  </div>
+</div>
+
+<dialog id="editDlg" aria-labelledby="edTitle">
+  <form method="dialog" class="dlg">
+    <h2 id="edTitle">記録の内容</h2>
+    <div class="ed-head"><img id="edImg" alt=""><div><div id="edKind" class="k"></div><div id="edMain" class="ed-main"></div></div></div>
+    <p id="edRead" class="pre"></p>
+    <label class="f" id="edDateRow">賞味期限の日付（読み違いはここで直せます）<input type="date" id="edDate"></label>
+    <div class="dlg-actions">
+      <button type="button" class="btn danger" id="edDel">誤検出として消す</button>
+      <button type="button" class="btn primary" id="edSave">日付を保存</button>
+      <button value="close" class="btn">閉じる</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="addDlg" aria-labelledby="adTitle">
+  <form method="dialog" class="dlg" id="addForm">
+    <h2 id="adTitle">手入力で記録</h2>
+    <p class="fine">文字認識を使わずに記録します。読み取りがうまくいかないときや、カメラを使わないときに使えます。</p>
+    <fieldset class="seg"><legend class="vh">種類</legend>
+      <label style="--c:var(--disc)"><input type="radio" name="adType" value="discount" checked>割引</label>
+      <label style="--c:var(--exp)"><input type="radio" name="adType" value="expiry">賞味期限</label>
+      <label style="--c:var(--chal)"><input type="radio" name="adType" value="challenge">安さへの挑戦</label>
+    </fieldset>
+    <label class="f" id="adTextL">表示の内容<input type="text" id="adText" placeholder="例: 3割引・半額・30円引" autocomplete="off"></label>
+    <label class="f" id="adDateL" hidden>賞味期限の日付<input type="date" id="adDate"></label>
+    <label class="f">メモ（商品名など・任意）<input type="text" id="adMemo" autocomplete="off"></label>
+    <div class="dlg-actions">
+      <button value="cancel" class="btn" formnovalidate>キャンセル</button>
+      <button value="ok" class="btn primary" id="adOk">記録する</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="licDlg" aria-labelledby="licTitle">
+  <form method="dialog" class="dlg">
+    <h2 id="licTitle">ライセンス・出典</h2>
+    <div class="lic">
+      <p>文字認識モデル: PaddleOCR PP-OCRv6 small（検出・認識モデルと文字辞書）。Apache License 2.0 で提供されています。<a href="models/LICENSE-PaddleOCR-models.txt" target="_blank" rel="noopener">ライセンス全文</a> / <a href="https://github.com/PaddlePaddle/PaddleOCR" target="_blank" rel="noopener">PaddleOCR</a></p>
+      <p>推論エンジン: ONNX Runtime Web（MIT License）。jsDelivr から読み込みます。<a href="https://github.com/microsoft/onnxruntime" target="_blank" rel="noopener">onnxruntime</a></p>
+      <p>フォント: Dela Gothic One、Zen Kaku Gothic New（SIL Open Font License）。Google Fonts から読み込みます。</p>
+      <p class="fine">カメラの映像と読み取った文字は端末の中だけで処理し、外部へは送信しません。記録した一覧（縮小画像を含む）はこの端末のブラウザに保存されます。</p>
+    </div>
+    <div class="dlg-actions"><button value="close" class="btn">閉じる</button></div>
+  </form>
+</dialog>
+
+<script>
+/* ================= 設定 ================= */
+const ORT_VER = "1.22.0";
+const ORT_BASE = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/`;
+const MODELS = {
+  det:  {url:"models/PP-OCRv6_small_det.onnx", size:9880512,  sha256:"d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e"},
+  rec:  {url:"models/PP-OCRv6_small_rec.onnx", size:21159378, sha256:"5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634"},
+  dict: {url:"models/ppocrv6_dict.txt",        size:74948,    sha256:"41557512862dfe31970cf22407742b629725461dd84c0d8771bde9c87c2202c8"},
+};
+const CACHE_NAME = "mikiri-models-v1";
+const REC_SIDE = 1920;      // 認識に使うフレームの長辺
+let DET_SIDE = 1280;        // 文字位置の検出に使う長辺（CPU時は960に下げる）
+let MAX_BOXES = 48;         // 1回で読む文字列の上限（大きい順）
+const MIN_CONF = 0.45;      // これ未満の読み取りは捨てる
+const LOW_CONF = 0.75;      // これ未満は「不確か」として点線・?付きで表示
+const TRACK_TTL = 3200, STALE_MS = 1600, REALERT_MS = 12000;
+const LOG_MAX = 30;
+
+const CATS = {
+  discount:  {name:"割引",         c:"var(--disc)", ci:"var(--disc-ink)", tone:[880,1175]},
+  expiry:    {name:"賞味期限",     c:"var(--exp)",  ci:"var(--exp-ink)",  tone:[660,660,990]},
+  challenge: {name:"安さへの挑戦", c:"var(--chal)", ci:"var(--chal-ink)", tone:[988,1319]},
+};
+
+/* ================= OCR コア（PaddleOCR PP-OCRv6: DB検出 + CTC認識） ================= */
+const MEAN=[0.485,0.456,0.406], STD=[0.229,0.224,0.225];
+// ImageData(RGBA) → det入力 [1,3,H,W]（BGR順・32の倍数にパディング）
+function detTensor(img){
+  const {width:W,height:H,data}=img, tw=Math.ceil(W/32)*32, th=Math.ceil(H/32)*32, n=tw*th;
+  const t=new Float32Array(3*n);
+  const pad=[-MEAN[0]/STD[0],-MEAN[1]/STD[1],-MEAN[2]/STD[2]];
+  t.fill(pad[0],0,n); t.fill(pad[1],n,2*n); t.fill(pad[2],2*n);
+  const k0=1/(255*STD[0]),k1=1/(255*STD[1]),k2=1/(255*STD[2]);
+  for(let y=0;y<H;y++){ let p=y*W*4, o=y*tw;
+    for(let x=0;x<W;x++,p+=4,o++){
+      t[o]=data[p+2]*k0+pad[0]; t[n+o]=data[p+1]*k1+pad[1]; t[2*n+o]=data[p]*k2+pad[2];
+    }}
+  return {t,tw,th};
+}
+async function detect(sess,img){
+  const {t,tw,th}=detTensor(img);
+  const out=await sess.run({x:new ort.Tensor("float32",t,[1,3,th,tw])});
+  const prob=out[sess.outputNames[0]].data;
+  const W=img.width,H=img.height,TH=0.3,BOX=0.5,UNCLIP=1.6;
+  const n=tw*th, seen=new Uint8Array(n), stack=new Int32Array(n), boxes=[];
+  for(let i=0;i<n;i++){
+    if(seen[i]||prob[i]<=TH) continue;
+    let sp=0,x0=1e9,y0=1e9,x1=-1,y1=-1,cnt=0,sum=0; stack[sp++]=i; seen[i]=1;
+    while(sp){ const p=stack[--sp],px=p%tw,py=(p/tw)|0; cnt++; sum+=prob[p];
+      if(px<x0)x0=px; if(px>x1)x1=px; if(py<y0)y0=py; if(py>y1)y1=py;
+      if(px>0&&!seen[p-1]&&prob[p-1]>TH){seen[p-1]=1;stack[sp++]=p-1;}
+      if(px<tw-1&&!seen[p+1]&&prob[p+1]>TH){seen[p+1]=1;stack[sp++]=p+1;}
+      if(py>0&&!seen[p-tw]&&prob[p-tw]>TH){seen[p-tw]=1;stack[sp++]=p-tw;}
+      if(py<th-1&&!seen[p+tw]&&prob[p+tw]>TH){seen[p+tw]=1;stack[sp++]=p+tw;} }
+    const w=x1-x0+1,h=y1-y0+1;
+    if(Math.min(w,h)<3||cnt<10||sum/cnt<BOX) continue;
+    const d=(w*h*UNCLIP)/(2*(w+h));
+    const bx0=Math.max(0,x0-d),by0=Math.max(0,y0-d),bx1=Math.min(W,x1+1+d),by1=Math.min(H,y1+1+d);
+    if(bx1-bx0<4||by1-by0<4) continue;
+    boxes.push({x:bx0,y:by0,w:bx1-bx0,h:by1-by0});
+  }
+  return boxes;
+}
+function recTensor(img,b,maxW){
+  const H=48,{width:W,height:IH,data}=img, rot=b.h/b.w>=1.5;
+  const lw=rot?b.h:b.w, lh=rot?b.w:b.h;
+  const tw=Math.min(maxW,Math.max(8,Math.round(H*lw/lh))), n=H*tw, t=new Float32Array(3*n);
+  for(let y=0;y<H;y++) for(let x=0;x<tw;x++){
+    const u=(x+.5)/tw, v=(y+.5)/H;
+    const sx=rot? b.x+v*b.w : b.x+u*b.w, sy=rot? b.y+(1-u)*b.h : b.y+v*b.h;
+    const fx=Math.min(W-1,Math.max(0,sx-.5)), fy=Math.min(IH-1,Math.max(0,sy-.5));
+    const x0=fx|0,y0=fy|0,x1=Math.min(W-1,x0+1),y1=Math.min(IH-1,y0+1),ax=fx-x0,ay=fy-y0;
+    const p00=(y0*W+x0)*4,p01=(y0*W+x1)*4,p10=(y1*W+x0)*4,p11=(y1*W+x1)*4, o=y*tw+x;
+    for(let c=0;c<3;c++){ const s=2-c; // BGR
+      const val=(data[p00+s]*(1-ax)+data[p01+s]*ax)*(1-ay)+(data[p10+s]*(1-ax)+data[p11+s]*ax)*ay;
+      t[c*n+o]=val/127.5-1; }
+  }
+  return {t,tw};
+}
+async function recognize(sess,img,boxes,dict){
+  const H=48, items=boxes.map((b,i)=>({b,i,...recTensor(img,b,960)})); items.sort((a,b)=>a.tw-b.tw);
+  const res=new Array(boxes.length);
+  for(let s=0;s<items.length;s+=8){
+    const ch=items.slice(s,s+8), mw=Math.max(...ch.map(c=>c.tw)), n=H*mw, T=new Float32Array(ch.length*3*n);
+    ch.forEach((c,k)=>{ for(let q=0;q<3;q++) for(let y=0;y<H;y++){ const src=q*H*c.tw+y*c.tw; T.set(c.t.subarray(src,src+c.tw), k*3*n+q*n+y*mw); } });
+    const out=await sess.run({x:new ort.Tensor("float32",T,[ch.length,3,H,mw])}), o=out[sess.outputNames[0]], [,Tn,C]=o.dims, d=o.data;
+    ch.forEach((c,k)=>{ const valid=Math.max(1,Math.min(Tn,Math.ceil(Tn*c.tw/mw))); let txt="",last=-1,cs=0,cc=0;
+      for(let tt=0;tt<valid;tt++){ const base=(k*Tn+tt)*C; let mi=0,mv=d[base];
+        for(let q=1;q<C;q++){ const v=d[base+q]; if(v>mv){mv=v;mi=q;} }
+        if(mi!==0&&mi!==last){ txt+=dict[mi]??""; cs+=mv; cc++; } last=mi; }
+      res[c.i]={text:txt,conf:cc?cs/cc:0,box:c.b}; });
+    await new Promise(r=>setTimeout(r,0));
+  }
+  return res;
+}
+function buildDict(txt){ const l=txt.replace(/\r/g,"").split("\n"); while(l.length&&l[l.length-1]==="") l.pop(); return l[0]===""?[...l," "]:["",...l," "]; }
+
+/* ================= 文字列 → 3種類の判定 ================= */
+const norm=s=>s.normalize("NFKC").replace(/\s+/g,"");
+const RE_CHAL=/安[さきぎざそ]へ|[さきぎざをそ]への[挑抗張机所兆桃]|への挑|挑戦/;
+const RE_DISC=/([0-9一二三四五六七八九])割(?!増|安|高|合|れ)|割引|割り引|半額|[0-9]{1,2}[%％](?:引|OFF|オフ)|[0-9]{1,4}円引|値引/i;
+const RE_EXP=/賞味|味期限|消費期|期限/;
+const RE_YMD=/(?:^|[^0-9])(\d{2})[.．\-\/・](\d{1,2})[.．\-\/・](\d{1,2})(?![0-9])/;
+const KAN={一:1,二:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9};
+
+function parseDate(s){
+  let m=s.match(RE_YMD);
+  if(m){ const y=+m[1],mo=+m[2],d=+m[3]; if(y>=20&&y<=45&&mo>=1&&mo<=12&&d>=1&&d<=31) return {year:2000+y,month:mo,day:d}; }
+  m=s.match(/(\d{1,2})[\/月](\d{1,2})/); if(m){ const mo=+m[1],d=+m[2]; if(mo>=1&&mo<=12&&d>=1&&d<=31) return {year:null,month:mo,day:d}; }
+  m=s.match(/期限(\d{1,2})(\d{2})(?!\d)/); if(m){ const mo=+m[1],d=+m[2]; if(mo>=1&&mo<=12&&d>=1&&d<=31) return {year:null,month:mo,day:d}; }
+  return null;
+}
+function today0(){ const t=new Date(); return new Date(t.getFullYear(),t.getMonth(),t.getDate()); }
+// 年のない日付は、半年以上前になるなら翌年とみなす
+function resolveDate(e){ const t0=today0(); const y=e.year||t0.getFullYear(); let d=new Date(y,e.month-1,e.day);
+  if(!e.year && (d-t0)/864e5 < -180) d=new Date(y+1,e.month-1,e.day); return d; }
+function daysLeft(e){ if(!e) return null; return Math.round((resolveDate(e)-today0())/864e5); }
+function urg(n){ if(n==null) return ""; if(n<0) return "期限切れ"; if(n===0) return "今日まで"; if(n===1) return "明日まで"; return `あと${n}日`; }
+function discInfo(s){ let pct=null;
+  const m1=s.match(/([0-9一二三四五六七八九])割/); if(m1) pct=(KAN[m1[1]]||+m1[1])*10;
+  if(/半額/.test(s)) pct=50;
+  const m2=s.match(/([0-9]{1,2})[%％]/); if(m2) pct=+m2[1];
+  const m3=s.match(/([0-9]{1,4})円引/);
+  return {pct, yen:m3?+m3[1]:null}; }
+
+function near(a,b){ // bがaの近く（同じ札の上下）にあるか
+  const ay=a.y+a.h/2, by=b.y+b.h/2, hh=Math.max(a.h,b.h);
+  const xo=Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x);
+  return Math.abs(ay-by)<hh*3.2 && xo>-hh*1.5;
+}
+function union(a,b){ const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y); return {x,y,w:Math.max(a.x+a.w,b.x+b.w)-x,h:Math.max(a.y+a.h,b.y+b.h)-y}; }
+
+// conf は、まとめた行のうち最も低い読取スコア
+function classify(lines){
+  const out=[];
+  for(const L of lines){
+    const s=norm(L.text); if(!s) continue;
+    if(RE_CHAL.test(s)) out.push({type:"challenge", box:L.box, text:s, conf:L.conf, info:{}});
+    if(RE_DISC.test(s)){
+      let box=L.box, conf=L.conf;
+      for(const o of lines){ if(o!==L && /引/.test(o.text) && near(L.box,o.box)){ box=union(box,o.box); conf=Math.min(conf,o.conf); } }
+      out.push({type:"discount", box, text:s, conf, info:discInfo(s)});
+    }
+    const ymd=s.match(RE_YMD);
+    if(RE_EXP.test(s) || (ymd && parseDate(s)?.year)){
+      let date=parseDate(s), box=L.box, conf=L.conf;
+      if(!date){ for(const o of lines){ if(o!==L && near(L.box,o.box)){ const d=parseDate(norm(o.text)); if(d){ date=d; box=union(box,o.box); conf=Math.min(conf,o.conf); break; } } } }
+      out.push({type:"expiry", box, text:s, conf, info:{date}});
+    }
+  }
+  // 同じ種類で重なっているものは1つに
+  const merged=[];
+  for(const d of out){ const m=merged.find(x=>x.type===d.type && iou(x.box,d.box)>0.15);
+    if(m){ m.box=union(m.box,d.box); m.conf=Math.min(m.conf,d.conf); if(d.type==="expiry"&&!m.info.date) m.info=d.info; if(d.text.length>m.text.length) m.text=d.text; if(d.info.pct&&!m.info.pct) m.info=d.info; }
+    else merged.push({...d}); }
+  return merged;
+}
+function iou(a,b){ const x=Math.max(0,Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x)), y=Math.max(0,Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y)); const i=x*y; return i/(a.w*a.h+b.w*b.h-i||1); }
+
+function label(d){
+  if(d.type==="discount"){ const p=d.info.pct; if(p===50) return "半額"; if(p) return p%10===0?`${p/10}割引`:`${p}%引`; if(d.info.yen) return `${d.info.yen}円引`; return d.info.custom||"値引き"; }
+  if(d.type==="expiry"){ const e=d.info.date; if(!e) return "賞味期限"; return `期限 ${e.month}/${e.day} ${urg(daysLeft(e))}`; }
+  return "安さへの挑戦";
+}
+const unsure=d=>d.conf!=null && d.conf<LOW_CONF;
+
+/* ================= 状態 ================= */
+const $=id=>document.getElementById(id);
+const video=$("video"), overlay=$("overlay");
+const state={enabled:new Set(Object.keys(CATS)), sound:true, paused:false, running:false};
+try{ const p=JSON.parse(localStorage.getItem("mikiri.live")||"null"); if(p){ if(Array.isArray(p.enabled)&&p.enabled.length) state.enabled=new Set(p.enabled.filter(k=>CATS[k])); if(typeof p.sound==="boolean") state.sound=p.sound; } }catch(e){}
+const save=()=>{ try{ localStorage.setItem("mikiri.live",JSON.stringify({enabled:[...state.enabled],sound:state.sound})); }catch(e){} };
+let det=null, rec=null, dict=null, backend="";
+let tracks=[], nextId=1, recentAlerts=[], logKeys=new Map();
+let logItems=[];            // 記録一覧（新しい順）。localStorage に保存
+const ignored=new Set();    // 誤検出として消した「種類|文字列」。ページを開き直すまで通知しない
+const ignKey=(type,text)=>type+"|"+text;
+let stream=null, wakeLock=null;
+let frameScale=1; // rec画像座標 → video座標
+const recCanvas=document.createElement("canvas"), recCtx=recCanvas.getContext("2d",{willReadFrequently:true});
+const detCanvas=document.createElement("canvas"), detCtx=detCanvas.getContext("2d",{willReadFrequently:true});
+
+/* ================= UI ================= */
+function setStat(text,run){ $("statText").textContent=text; $("stat").classList.toggle("run",!!run); }
+function startMsg(text){ const m=$("startMsg"); m.hidden=!text; m.textContent=text||""; }
+function renderChips(){
+  const box=$("chips"); box.innerHTML="";
+  for(const [k,v] of Object.entries(CATS)){
+    const b=document.createElement("button"); b.className="chip"; b.id="chip-"+k; b.style.setProperty("--c",v.c);
+    b.setAttribute("aria-pressed",state.enabled.has(k)); b.innerHTML='<span class="sw"></span>'; b.append(v.name);
+    b.onclick=()=>{ if(state.enabled.has(k)){ if(state.enabled.size>1) state.enabled.delete(k); } else state.enabled.add(k); save(); renderChips(); drawOverlay(); };
+    box.append(b);
+  }
+  $("soundBtn").setAttribute("aria-pressed",state.sound); $("soundWave").style.display=state.sound?"":"none";
+}
+$("soundBtn").onclick=()=>{ state.sound=!state.sound; save(); renderChips(); if(state.sound) beep([880]); };
+$("pauseBtn").onclick=()=>{ state.paused=!state.paused; $("pauseBtn").setAttribute("aria-pressed",state.paused);
+  $("pauseBtn").setAttribute("aria-label",state.paused?"再開":"一時停止");
+  $("pauseIcon").setAttribute("d",state.paused?"M8 5l11 7-11 7z":"M7 5h3.5v14H7zM13.5 5H17v14h-3.5z");
+  if(state.paused){ video.pause(); setStat("一時停止"); } else { video.play().catch(()=>{}); } };
+
+function drawOverlay(){
+  const W=overlay.clientWidth,H=overlay.clientHeight,vw=video.videoWidth,vh=video.videoHeight; if(!vw) return;
+  const sc=Math.max(W/vw,H/vh), dx=(W-vw*sc)/2, dy=(H-vh*sc)/2, now=performance.now();
+  const keep=new Set();
+  for(const t of tracks){
+    if(!state.enabled.has(t.type)) continue;
+    const id="t"+t.id; keep.add(id);
+    let el=document.getElementById(id);
+    if(!el){ el=document.createElement("div"); el.id=id; el.className="box"; el.innerHTML='<span class="tag"></span>'; overlay.append(el); }
+    const c=CATS[t.type]; el.style.setProperty("--c",c.c); el.style.setProperty("--ci",c.ci);
+    const f=frameScale, x=dx+t.box.x*f*sc, y=dy+t.box.y*f*sc, w=t.box.w*f*sc, h=t.box.h*f*sc;
+    el.style.left=x+"px"; el.style.top=y+"px"; el.style.width=w+"px"; el.style.height=h+"px";
+    el.classList.toggle("low", y<70); el.classList.toggle("stale", now-t.last>STALE_MS); el.classList.toggle("unsure", unsure(t));
+    el.firstChild.textContent=label(t)+(unsure(t)?" ?":"");
+    el.firstChild.style.left = x<0 ? (Math.min(-x, Math.max(0,w-60))+4)+"px" : "";
+  }
+  for(const el of [...overlay.children]) if(!keep.has(el.id)) el.remove();
+}
+
+let actx=null;
+function beep(freqs){
+  if(!state.sound||!actx) return;
+  try{ let t=actx.currentTime;
+    for(const f of freqs){ const o=actx.createOscillator(), g=actx.createGain(); o.type="square"; o.frequency.value=f;
+      g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.18,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+0.12);
+      o.connect(g).connect(actx.destination); o.start(t); o.stop(t+0.13); t+=0.14; } }catch(e){}
+}
+function banner(d){
+  const c=CATS[d.type], b=document.createElement("div"); b.className="b"; b.style.setProperty("--c",c.c); b.style.setProperty("--ci",c.ci);
+  b.textContent= (d.type==="challenge" ? "安さへの挑戦" : label(d).replace(/^期限 /,"賞味期限 "))+(unsure(d)?" ?":"");
+  const s=document.createElement("small");
+  s.textContent = unsure(d) ? "読み取りが不確かです。実物を確かめてください" : d.type==="expiry" ? "賞味期限の表示を発見" : (d.type==="discount"?"値引きを発見":"プライスカードを発見");
+  b.append(s);
+  $("banner").replaceChildren(b);
+}
+function thumbFrom(box){
+  try{ const pad=0.12, x=Math.max(0,box.x-box.w*pad), y=Math.max(0,box.y-box.h*pad), w=Math.min(recCanvas.width-x,box.w*(1+2*pad)), h=Math.min(recCanvas.height-y,box.h*(1+2*pad));
+    const s=Math.min(1,140/Math.max(w,h)), c=document.createElement("canvas"); c.width=Math.max(1,w*s|0); c.height=Math.max(1,h*s|0);
+    c.getContext("2d").drawImage(recCanvas,x,y,w,h,0,0,c.width,c.height); return c.toDataURL("image/jpeg",.8); }catch(e){ return ""; }
+}
+
+/* ================= 記録一覧 ================= */
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+function loadLog(){ try{ const a=JSON.parse(localStorage.getItem("mikiri.log")||"[]"); if(Array.isArray(a)) logItems=a.filter(x=>x&&CATS[x.type]&&x.info).slice(0,LOG_MAX); }catch(e){} }
+function saveLog(){
+  try{ localStorage.setItem("mikiri.log",JSON.stringify(logItems)); }
+  catch(e){ try{ localStorage.setItem("mikiri.log",JSON.stringify(logItems.map(x=>({...x,thumb:""})))); }catch(e2){} } // 容量不足なら画像なしで保存
+}
+function when(at){ const d=new Date(at), hm=d.toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"});
+  return d.toDateString()===new Date().toDateString()?hm:`${d.getMonth()+1}/${d.getDate()} ${hm}`; }
+const headOf=it=> it.type==="expiry"&&it.info.date ? `${it.info.date.month}/${it.info.date.day}` : label(it);
+function kindEls(it){
+  const c=CATS[it.type], out=[];
+  const kc=document.createElement("span"); kc.className="kchip"; kc.textContent=c.name; out.push(kc);
+  if(it.type==="expiry"&&it.info.date){ const u=document.createElement("span"); u.className="urg"; u.textContent=urg(daysLeft(it.info.date)); out.push(u); }
+  const sc=document.createElement("span"); sc.className="sc";
+  if(it.source==="manual") sc.textContent="手入力";
+  else if(it.info.fixed) sc.textContent="訂正済み";
+  else if(it.conf!=null){ sc.textContent=`読取${Math.round(it.conf*100)}%`+(unsure(it)?"・不確か":""); sc.classList.toggle("lowc",unsure(it)); }
+  if(sc.textContent) out.push(sc);
+  return out;
+}
+function cardEl(it){
+  const c=CATS[it.type], card=document.createElement("button"); card.type="button"; card.className="card";
+  card.style.setProperty("--c",c.c); card.style.setProperty("--ci",c.ci);
+  let im; if(it.thumb){ im=document.createElement("img"); im.alt=""; im.src=it.thumb; } else { im=document.createElement("span"); im.className="noimg"; im.textContent=it.source==="manual"?"手入力":"—"; }
+  const m=document.createElement("div");
+  const k=document.createElement("div"); k.className="k"; k.append(...kindEls(it));
+  const h=document.createElement("div"); h.className="h"; h.textContent=headOf(it);
+  const tx=document.createElement("div"); tx.className="t"; tx.textContent=when(it.at)+"  "+(it.text||"");
+  m.append(k,h,tx); card.append(im,m);
+  card.setAttribute("aria-label",`${c.name} ${headOf(it)}。タップで訂正・削除`);
+  card.onclick=()=>openEdit(it.id);
+  return card;
+}
+function renderLog(){ $("log").replaceChildren(...logItems.map(cardEl)); }
+function pushLog(it){ logItems.unshift(it); if(logItems.length>LOG_MAX) logItems.length=LOG_MAX; renderLog(); saveLog(); }
+function addLog(d){
+  const key=d.type+"|"+(d.type==="expiry"&&d.info.date?`${d.info.date.month}-${d.info.date.day}`:"")+"|"+d.text.slice(0,10);
+  const now=Date.now(); if(logKeys.has(key) && now-logKeys.get(key)<90000) return; logKeys.set(key,now);
+  pushLog({id:uid(),type:d.type,info:structuredClone(d.info),text:d.text,conf:d.conf,thumb:thumbFrom(d.box),at:now,source:"camera"});
+}
+
+/* 訂正・削除 */
+let toastTimer=0, toastUndo=null;
+function toast(text,undo){ $("toastText").textContent=text; toastUndo=undo||null; $("toastUndo").hidden=!undo; $("toast").hidden=false;
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>{ $("toast").hidden=true; toastUndo=null; },7000); }
+$("toastUndo").onclick=()=>{ const u=toastUndo; toastUndo=null; $("toast").hidden=true; u?.(); };
+
+const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const fromIso=v=>{ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(v||""); return m?{year:+m[1],month:+m[2],day:+m[3]}:null; };
+let editing=null;
+function openEdit(id){
+  const it=logItems.find(x=>x.id===id); if(!it) return; editing=it; const c=CATS[it.type];
+  $("edImg").hidden=!it.thumb; $("edImg").src=it.thumb||"";
+  const k=$("edKind"); k.style.setProperty("--c",c.c); k.style.setProperty("--ci",c.ci); k.replaceChildren(...kindEls(it));
+  $("edMain").textContent=headOf(it);
+  $("edRead").textContent = it.source==="manual" ? `手入力した内容: ${it.text||"（なし）"}\n記録 ${when(it.at)}`
+    : `読み取った文字: ${it.text}\n読取スコア ${Math.round((it.conf||0)*100)}%（${unsure(it)?"低め。読み違いの可能性があります":"文字認識モデルが出した確からしさの目安"}）\n記録 ${when(it.at)}`;
+  const isExp=it.type==="expiry"; $("edDateRow").hidden=!isExp; $("edSave").hidden=!isExp;
+  $("edDate").value = isExp&&it.info.date ? iso(resolveDate(it.info.date)) : "";
+  $("edDel").textContent = it.source==="manual" ? "この記録を消す" : "誤検出として消す";
+  $("editDlg").showModal();
+}
+$("edSave").onclick=()=>{ if(!editing) return; editing.info={...editing.info,date:fromIso($("edDate").value),fixed:true};
+  renderLog(); saveLog(); $("editDlg").close(); toast("日付を直しました"); };
+$("edDel").onclick=()=>{
+  const it=editing; if(!it) return; const idx=logItems.indexOf(it); if(idx<0) return;
+  logItems.splice(idx,1); let k=null;
+  if(it.source!=="manual"){ k=ignKey(it.type,it.text); ignored.add(k); tracks=tracks.filter(t=>ignKey(t.type,t.text)!==k); }
+  renderLog(); saveLog(); drawOverlay(); $("editDlg").close();
+  toast(k?"消しました。同じ文字列は、ページを開き直すまで通知しません":"記録を消しました", ()=>{
+    logItems.splice(Math.min(idx,logItems.length),0,it); if(k) ignored.delete(k); renderLog(); saveLog(); });
+};
+$("editDlg").addEventListener("close",()=>{ editing=null; });
+
+/* 手入力（文字認識を使わない経路） */
+const adType=()=>document.querySelector('input[name="adType"]:checked').value;
+function syncAddForm(){ const t=adType(); $("adDateL").hidden=t!=="expiry"; $("adTextL").hidden=t==="expiry";
+  $("adText").placeholder = t==="discount" ? "例: 3割引・半額・30円引" : "例: プライスカードの商品"; }
+for(const r of document.querySelectorAll('input[name="adType"]')) r.onchange=syncAddForm;
+$("addBtn").onclick=()=>{ $("addForm").reset(); $("adDate").value=iso(today0()); syncAddForm(); $("addDlg").showModal(); };
+$("addDlg").addEventListener("close",()=>{
+  if($("addDlg").returnValue!=="ok") return;
+  const type=adType(), raw=$("adText").value.trim(), memo=$("adMemo").value.trim();
+  let info={};
+  if(type==="discount"){ info=discInfo(norm(raw)); if(!info.pct&&!info.yen&&raw) info.custom=raw.slice(0,12); }
+  if(type==="expiry") info={date:fromIso($("adDate").value)};
+  const text=[type==="expiry"?"":raw,memo].filter(Boolean).join(" ");
+  pushLog({id:uid(),type,info,text,conf:null,thumb:"",at:Date.now(),source:"manual"});
+  toast("手入力で記録しました");
+});
+
+function showSheet(){ $("start").hidden=true; $("sheet").hidden=false; renderChips(); renderLog(); }
+$("manualBtn").onclick=()=>{ showSheet(); $("camBtn").hidden=false; setStat("手入力モード"); };
+$("camBtn").onclick=()=>{ $("camBtn").hidden=true; $("sheet").hidden=true; $("start").hidden=false; setStat("停止中"); };
+$("licBtn").onclick=()=>$("licDlg").showModal();
+
+/* ================= トラッキング ================= */
+function updateTracks(dets){
+  const now=performance.now();
+  for(const d of dets){
+    if(ignored.has(ignKey(d.type,d.text))) continue;
+    let best=null,bs=0;
+    for(const t of tracks){ if(t.type!==d.type) continue; const s=iou(t.box,d.box); const cx=Math.abs((t.box.x+t.box.w/2)-(d.box.x+d.box.w/2)), cy=Math.abs((t.box.y+t.box.h/2)-(d.box.y+d.box.h/2));
+      const sc=s>0.1?s:(cx<Math.max(t.box.w,d.box.w)*.6&&cy<Math.max(t.box.h,d.box.h)*.8?0.1:0); if(sc>bs){bs=sc;best=t;} }
+    if(best){ best.box=d.box; best.last=now; best.text=d.text; best.conf=d.conf; if(d.info.date||d.info.pct||!Object.keys(best.info).length) best.info=d.info; }
+    else { const t={id:nextId++,...d,first:now,last:now}; tracks.push(t);
+      if(state.enabled.has(d.type)){
+        const recent=recentAlerts.some(a=>a.type===d.type && now-a.at<REALERT_MS && (a.text===d.text.slice(0,8)));
+        if(!recent){ recentAlerts.push({type:d.type,text:d.text.slice(0,8),at:now}); beep(CATS[d.type].tone); try{navigator.vibrate&&navigator.vibrate([80,40,80]);}catch(e){} banner(d); }
+        addLog(d);
+      } }
+  }
+  tracks=tracks.filter(t=>now-t.last<TRACK_TTL);
+  recentAlerts=recentAlerts.filter(a=>now-a.at<REALERT_MS);
+}
+
+/* ================= メインループ ================= */
+async function processFrame(){
+  const vw=video.videoWidth,vh=video.videoHeight; if(!vw||!vh) return false;
+  const rs=Math.min(1,REC_SIDE/Math.max(vw,vh)); recCanvas.width=Math.round(vw*rs); recCanvas.height=Math.round(vh*rs);
+  recCtx.drawImage(video,0,0,recCanvas.width,recCanvas.height);
+  const ds=Math.min(1,DET_SIDE/Math.max(recCanvas.width,recCanvas.height)); detCanvas.width=Math.round(recCanvas.width*ds); detCanvas.height=Math.round(recCanvas.height*ds);
+  detCtx.drawImage(recCanvas,0,0,detCanvas.width,detCanvas.height);
+  const recImg=recCtx.getImageData(0,0,recCanvas.width,recCanvas.height), detImg=detCtx.getImageData(0,0,detCanvas.width,detCanvas.height);
+  frameScale=1/rs;
+  const tA=performance.now();
+  let boxes=(await detect(det,detImg)).map(b=>({x:b.x/ds,y:b.y/ds,w:b.w/ds,h:b.h/ds}))
+    .filter(b=>b.h>=12&&b.w>=12).sort((a,b)=>b.w*b.h-a.w*a.h).slice(0,MAX_BOXES);
+  if(!boxes.length){ updateTracks([]); return true; }
+  const tB=performance.now();
+  const lines=(await recognize(rec,recImg,boxes,dict)).filter(r=>r&&r.conf>=MIN_CONF&&r.text.trim());
+  if(window.__dbg) console.log(`det ${Math.round(tB-tA)}ms rec ${Math.round(performance.now()-tB)}ms boxes ${boxes.length} :: `+lines.map(l=>l.text).join(" | "));
+  updateTracks(classify(lines));
+  return true;
+}
+async function loop(){
+  let avg=0;
+  while(state.running){
+    if(state.paused||document.hidden){ await new Promise(r=>setTimeout(r,250)); continue; }
+    const t0=performance.now();
+    try{ await processFrame(); }catch(e){ console.error(e); setStat("解析エラー"); await new Promise(r=>setTimeout(r,1000)); }
+    const dt=performance.now()-t0; avg=avg?avg*.7+dt*.3:dt;
+    if(!state.paused) setStat(`${backend} ${(avg/1000).toFixed(1)}秒/回`,true);
+    drawOverlay();
+    await new Promise(r=>setTimeout(r,60));
+  }
+}
+setInterval(()=>{ if(state.running) drawOverlay(); },300);
+addEventListener("resize",drawOverlay);
+
+/* ================= 起動 ================= */
+function loadScript(src){ return new Promise((res,rej)=>{ const s=document.createElement("script"); s.src=src; s.crossOrigin="anonymous"; s.onload=res; s.onerror=()=>rej(new Error("script")); document.head.append(s); }); }
+const hex=b=>[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+// サイズと SHA-256 が一致するか（壊れたキャッシュや途中で切れた取得を弾く）
+async function intact(key,buf){ const {size,sha256}=MODELS[key]; if(buf.byteLength!==size) return false;
+  if(!crypto?.subtle) return true; return hex(await crypto.subtle.digest("SHA-256",buf))===sha256; }
+async function fetchModel(key,onProg){
+  const {url,size}=MODELS[key]; let cache=null;
+  try{ cache=await caches.open(CACHE_NAME); const hit=await cache.match(url);
+    if(hit){ const b=await hit.arrayBuffer(); if(await intact(key,b)){ onProg(size); return b; } await cache.delete(url); } }catch(e){ cache=null; }
+  const r=await fetch(url,{cache:"no-store"}); if(!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
+  const rd=r.body.getReader(); const chunks=[]; let got=0;
+  for(;;){ const {done,value}=await rd.read(); if(done) break; chunks.push(value); got+=value.length; onProg(got); }
+  const buf=new Uint8Array(got); let o=0; for(const c of chunks){ buf.set(c,o); o+=c.length; }
+  if(!(await intact(key,buf.buffer))) throw new Error(`${url} の中身が想定と違います（サイズまたはハッシュ不一致）`);
+  try{ if(cache) await cache.put(url,new Response(buf.slice(),{headers:{"content-type":"application/octet-stream"}})); }catch(e){}
+  return buf.buffer;
+}
+async function makeSessions(detBuf,recBuf){
+  const tryEP=async ep=>{
+    const opt={executionProviders:[ep],graphOptimizationLevel:"all"};
+    const d=await ort.InferenceSession.create(new Uint8Array(detBuf),opt), r=await ort.InferenceSession.create(new Uint8Array(recBuf),opt);
+    await d.run({x:new ort.Tensor("float32",new Float32Array(3*64*64),[1,3,64,64])});
+    await r.run({x:new ort.Tensor("float32",new Float32Array(3*48*64),[1,3,48,64])});
+    return [d,r];
+  };
+  if(navigator.gpu){ try{ const s=await tryEP("webgpu"); backend="GPU"; return s; }catch(e){ console.warn("webgpu unavailable",e); } }
+  const s=await tryEP("wasm"); backend="CPU"; DET_SIDE=960; MAX_BOXES=28; return s;
+}
+
+const streamLive=()=>!!stream && stream.getVideoTracks().some(t=>t.readyState==="live");
+function stopStream(){ if(stream) for(const t of stream.getTracks()) t.stop(); stream=null; video.srcObject=null; }
+async function keepAwake(){
+  if(!navigator.wakeLock||document.visibilityState!=="visible"||!state.running) return;
+  if(wakeLock&&!wakeLock.released) return;
+  try{ wakeLock=await navigator.wakeLock.request("screen"); }catch(e){}
+}
+// Service Worker が制御を始めるまで少し待つ（ORT をキャッシュ経由で取得するため）
+function swReady(ms){ if(!navigator.serviceWorker||navigator.serviceWorker.controller) return Promise.resolve();
+  return new Promise(r=>{ const t=setTimeout(r,ms); navigator.serviceWorker.addEventListener("controllerchange",()=>{ clearTimeout(t); r(); },{once:true}); }); }
+
+async function start(){
+  const go=$("goBtn"); go.disabled=true; startMsg("");
+  try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); actx.resume&&actx.resume(); }catch(e){}
+  const fail=(msg,btn="カメラを起動")=>{ startMsg(msg); go.disabled=false; go.textContent=btn; };
+  if(!window.isSecureContext) return fail("カメラはhttpsで開いたページでしか使えません。httpsのURLで開き直してください。手入力だけなら下のボタンから使えます。");
+  if(!navigator.mediaDevices?.getUserMedia) return fail("このブラウザではカメラを使えません。SafariかChromeで開いてください。手入力だけなら下のボタンから使えます。");
+  // カメラ（前回のストリームが生きていれば使い回す）
+  go.textContent="カメラを準備中…";
+  if(!streamLive()){
+    stopStream();
+    try{ stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080}}}); }
+    catch(e){ return fail(e.name==="NotAllowedError"?"カメラの使用が許可されませんでした。ブラウザの設定でこのサイトのカメラを許可してから、もう一度押してください。手入力だけなら下のボタンから使えます。":"カメラを起動できませんでした（"+e.name+"）。手入力だけなら下のボタンから使えます。"); }
+    video.srcObject=stream;
+  }
+  await video.play().catch(()=>{});
+  // モデル
+  if(!det){
+    go.textContent="文字認識モデルを準備中…"; $("progWrap").hidden=false;
+    const prog={det:0,rec:0,dict:0}, tot=MODELS.det.size+MODELS.rec.size+MODELS.dict.size;
+    const upd=(k)=>(g)=>{ prog[k]=g; const s=prog.det+prog.rec+prog.dict; $("prog").style.width=Math.min(100,s/tot*100)+"%"; $("progText").textContent=`文字認識モデル ${(s/1048576).toFixed(1)} / ${(tot/1048576).toFixed(0)} MB`; };
+    try{
+      await swReady(3000);
+      await loadScript(ORT_BASE+"ort.webgpu.min.js");
+      ort.env.wasm.wasmPaths=ORT_BASE; ort.env.wasm.numThreads=self.crossOriginIsolated?Math.min(4,navigator.hardwareConcurrency||2):1;
+      const [db,rb,dt]=await Promise.all([fetchModel("det",upd("det")),fetchModel("rec",upd("rec")),fetchModel("dict",upd("dict"))]);
+      dict=buildDict(new TextDecoder().decode(dt));
+      $("progText").textContent="実行エンジンを準備しています…（初回は約22MBを取得）";
+      [det,rec]=await makeSessions(db,rb);
+    }catch(e){ console.error(e); stopStream(); return fail("文字認識モデルを読み込めませんでした。通信状態を確認して、もう一度押してください。手入力だけなら下のボタンから使えます。（"+(e.message||e)+"）","もう一度試す"); }
+    $("progWrap").hidden=true;
+  }
+  go.disabled=false; go.textContent="カメラを起動"; $("camBtn").hidden=true;
+  showSheet();
+  state.running=true; keepAwake(); loop();
+}
+$("goBtn").onclick=start;
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden || !state.running) return;
+  if(!state.paused) video.play().catch(()=>{});
+  keepAwake(); // 非表示になると Wake Lock は解除されるので取り直す
+});
+
+loadLog();
+if("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("sw.js").catch(e=>console.warn("sw",e));
+</script>
+</body>
+</html>
